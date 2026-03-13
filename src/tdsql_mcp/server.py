@@ -3,6 +3,7 @@
 import argparse
 import json
 import os
+import sys
 import threading
 from importlib import resources
 from typing import Any
@@ -420,7 +421,7 @@ def main() -> None:
         raise SystemExit(f"Failed to connect to Teradata at {_conn_params.get('host')!r}: {exc}") from exc
 
     mode = "read-only" if _read_only else "read-write"
-    print(f"tdsql-mcp started ({mode}) — connected to {_conn_params['host']}", flush=True)
+    print(f"tdsql-mcp started ({mode}) — connected to {_conn_params['host']}", file=sys.stderr, flush=True)
 
     mcp.run()
 
