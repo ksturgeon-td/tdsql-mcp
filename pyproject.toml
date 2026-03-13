@@ -1,0 +1,22 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "tdsql-mcp"
+version = "0.1.0"
+description = "MCP server for Teradata SQL operations"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = [
+    "mcp>=1.0.0",
+    "teradatasql>=20.0.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.scripts]
+tdsql-mcp = "tdsql_mcp.server:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tdsql_mcp"]
