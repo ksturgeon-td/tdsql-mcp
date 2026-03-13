@@ -114,10 +114,28 @@ With extra parameters (LDAP auth + encryption):
 }
 ```
 
+Using a local virtual environment (instead of `uvx`):
+
+```json
+{
+  "mcpServers": {
+    "teradata": {
+      "command": "/path/to/tdsql-mcp/.venv/bin/tdsql-mcp",
+      "args": [],
+      "env": {
+        "DATABASE_URI": "teradata://myuser:mypassword@myhost/mydb"
+      }
+    }
+  }
+}
+```
+
+Replace `/path/to/tdsql-mcp` with the absolute path to where you cloned the repo — for example `/Users/alice/projects/tdsql-mcp`. The `.venv/bin/tdsql-mcp` script is created automatically when you run `pip install -e .` inside the venv. No `uvx` or separate install needed.
+
 For read-only mode, add `--read-only` to `args`:
 
 ```json
-"args": ["tdsql-mcp", "--read-only"]
+"args": ["--read-only"]
 ```
 
 ### Running directly
