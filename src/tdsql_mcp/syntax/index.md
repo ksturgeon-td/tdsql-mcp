@@ -25,7 +25,7 @@ Use `get_syntax_help(topic="<name>")` to load any topic below.
 | `ml-functions` | Vantage ML: TD_XGBoost, TD_DecisionForest, TD_LogReg, scoring |
 | `data-exploration` | Descriptive stats, sampling, histogram, correlation, MovingAverage, TD_UnivariateStatistics, TD_Histogram, TD_QQNorm |
 | `data-cleaning` | NULL handling, deduplication, string cleaning, outlier detection, type validation |
-| `data-prep` | Feature engineering, binning, encoding, TD_Unpivot, normalization |
+| `data-prep` | Feature engineering: binning, encoding, scaling, pivoting, polynomial features, dimensionality reduction, Fit/Transform pairs |
 | `utility-functions` | TD_FillRowID, TD_NumApply, TD_RoundColumns, TD_StrApply |
 
 ## Reference
