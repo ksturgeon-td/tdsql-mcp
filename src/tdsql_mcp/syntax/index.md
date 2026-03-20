@@ -26,6 +26,7 @@ Use `get_syntax_help(topic="<name>")` to load any topic below.
 | `data-exploration` | Descriptive stats, sampling, histogram, correlation, MovingAverage, TD_UnivariateStatistics, TD_Histogram, TD_QQNorm |
 | `data-cleaning` | NULL handling, deduplication, string cleaning, outlier detection, type validation |
 | `data-prep` | Feature engineering, binning, encoding, TD_Unpivot, normalization |
+| `utility-functions` | TD_FillRowID, TD_NumApply, TD_RoundColumns, TD_StrApply |
 
 ## Reference
 | Topic | Description |
