@@ -297,8 +297,11 @@ FROM db.campaign;
 
 ## Fit/Transform Functions
 
-The following functions follow the two-phase Fit/Transform pattern.
-See the `fit-transform-pattern` topic for full details on storing and reusing Fit outputs.
+The following functions follow the two-phase Fit/Transform pattern. The Fit function learns parameters from training data (bin boundaries, encoding mappings, scaling factors, etc.) and writes them to a FitTable. The Transform function applies those parameters to any dataset.
+
+**FitTable outputs should be saved and reused** — use the `OUT TABLE` clause on the Fit function to persist the FitTable to a named database table. If `OUT TABLE` is not available for a given function, use `CREATE TABLE AS (SELECT * FROM TD_XxxFit(...)) WITH DATA` or `INSERT INTO saved_table SELECT * FROM TD_XxxFit(...)` to capture the output. The same FitTable can then be applied to new or incoming data without refitting, ensuring consistent transformations across training and scoring pipelines.
+
+See the `fit-transform-pattern` topic for full syntax details on storing and reusing Fit outputs.
 
 | Function Pair | Purpose |
 |---|---|
