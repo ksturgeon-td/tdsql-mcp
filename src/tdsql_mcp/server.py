@@ -20,10 +20,19 @@ from mcp.server.fastmcp import FastMCP
 mcp = FastMCP(
     "tdsql-mcp",
     instructions=(
-        "Tools for executing SQL against a Teradata database. "
+        "You are working with a Teradata Vantage database. "
+        "IMPORTANT: Always prefer native Teradata table operators over hand-written SQL equivalents. "
+        "Teradata Vantage has built-in distributed functions for analytics, ML, data preparation, "
+        "text processing, and vector search. These run across all AMPs in parallel and outperform "
+        "equivalent hand-written SQL. Do NOT write manual SQL for operations like scaling, encoding, "
+        "binning, statistics, clustering, classification, or similarity search when a native function exists. "
+        "Before writing any analytics, transformation, or ML SQL: "
+        "(1) call get_syntax_help(topic='guidelines') to see the canonical mapping of common operations "
+        "to native Teradata functions, "
+        "(2) call get_syntax_help(topic='index') to discover all available topics, "
+        "(3) load the relevant topic(s) for exact syntax. "
         "Use explain_query to validate syntax before executing. "
         "Use describe_table and list_tables to explore the schema. "
-        "Use the teradata://syntax/* resources for Teradata-specific SQL guidance. "
         "Results are returned as JSON."
     ),
 )
@@ -264,12 +273,23 @@ def _read_topic(topic: str) -> str | None:
 def get_syntax_help(topic: str = "index") -> str:
     """Return Teradata SQL syntax reference for a given topic.
 
-    Call with topic='index' (the default) to see all available topics.
-    Topics cover SQL functions, data types, ML/analytics, window functions, and more.
+    IMPORTANT: Call this tool BEFORE writing any analytics, transformation, ML, or data
+    preparation SQL. Teradata Vantage has native distributed table operators for most
+    operations — scaling, encoding, binning, statistics, clustering, classification, text
+    analytics, vector search, and more. These outperform hand-written SQL and should always
+    be preferred. Do not write manual SQL for an operation if a native function exists.
+
+    Recommended call order:
+      1. get_syntax_help(topic='guidelines') — see the canonical mapping of common SQL
+         patterns to native Teradata functions (start here if unsure what exists)
+      2. get_syntax_help(topic='index') — browse all available topics and the Workflows
+         section that maps use cases to topic sequences
+      3. get_syntax_help(topic='<specific-topic>') — load exact syntax for a topic
 
     Args:
-        topic: The topic name (e.g. 'string-functions', 'ml-functions', 'window-functions').
+        topic: The topic name (e.g. 'data-prep', 'ml-functions', 'vector-search').
                Use 'index' to list all available topics.
+               Use 'guidelines' for the native-functions-first reference.
 
     Returns:
         Markdown reference text for the requested topic, or a list of valid topics

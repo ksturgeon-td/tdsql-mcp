@@ -2,6 +2,13 @@
 
 Use `get_syntax_help(topic="<name>")` to load any topic below.
 
+> **Always prefer native Teradata functions over hand-written SQL.** Before writing analytics, transformation, ML, or search SQL, call `get_syntax_help(topic="guidelines")` to see the canonical mapping of common operations to native functions. Native table operators run distributed across all AMPs and outperform equivalent manual SQL.
+
+## Start Here
+| Topic | Description |
+|-------|-------------|
+| `guidelines` | **Native functions first** — canonical mapping of common SQL patterns to native Teradata functions; when to use each |
+
 ## Core SQL
 | Topic | Description |
 |-------|-------------|
