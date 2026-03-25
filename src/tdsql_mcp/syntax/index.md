@@ -3,6 +3,8 @@
 Use `get_syntax_help(topic="<name>")` to load any topic below.
 
 > **Always prefer native Teradata functions over hand-written SQL.** Before writing analytics, transformation, ML, or search SQL, call `get_syntax_help(topic="guidelines")` to see the canonical mapping of common operations to native functions. Native table operators run distributed across all AMPs and outperform equivalent manual SQL.
+>
+> **Minimize data movement.** Teradata tables can contain billions of rows. Never SELECT raw data to the agent for processing — use native functions that summarize and compute in-database. Chain pipeline steps as CTEs. Persist large outputs with OUT TABLE. Return results, not data.
 
 ## Start Here
 | Topic | Description |

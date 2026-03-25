@@ -8,6 +8,113 @@ Teradata Vantage has built-in distributed table operators for most analytics, ML
 
 ---
 
+## Minimize Data Movement — Critical at Teradata Scale
+
+Teradata tables routinely contain billions to tens of billions of rows. The native functions in this library are designed to operate at that scale — but only if data stays on the platform. **Every row returned to the agent is a row that crossed the network, consumed session spool, and burned LLM context.** At Teradata scale, pulling data to the client for processing is not just inefficient — it is architecturally wrong.
+
+### Rules for data movement minimization
+
+**1. Never SELECT raw rows for analytics — summarize in-database**
+
+```sql
+-- WRONG: pulls millions of rows to agent for inspection
+SELECT * FROM db.large_table;
+
+-- RIGHT: compute the summary in-database, return only the result
+SELECT * FROM TD_ColumnSummary(
+    ON db.large_table AS InputTable PARTITION BY ANY
+    USING TargetColumns('[1:20]')
+) AS t;
+```
+
+**2. Use SAMPLE or TOP N when you need to see rows**
+
+```sql
+-- Explore structure and values without touching the full table
+SELECT TOP 100 * FROM db.large_table SAMPLE 0.001;
+```
+
+**3. Filter before you function — push predicates as deep as possible**
+
+```sql
+-- WRONG: passes full table to function, then filters output
+SELECT * FROM TD_UnivariateStatistics(...) AS t WHERE partition_col = 'X';
+
+-- RIGHT: filter the input subquery so only relevant rows enter the function
+SELECT * FROM TD_UnivariateStatistics(
+    ON (SELECT * FROM db.large_table WHERE partition_col = 'X') AS InputTable
+    ...
+) AS t;
+```
+
+**4. Chain pipeline steps as CTEs — keep intermediate results in-database**
+
+```sql
+-- WRONG: agent runs Step 1, receives result, passes it back for Step 2
+-- (two round trips; intermediate data crosses the network)
+
+-- RIGHT: chain steps in a single query — data never leaves Teradata
+WITH cleaned AS (
+    SELECT * FROM TD_OutlierFilterTransform(
+        ON db.raw_data AS InputTable PARTITION BY ANY
+        ON db.outlier_fit AS FitTable DIMENSION
+    ) AS t
+),
+transformed AS (
+    SELECT * FROM TD_ColumnTransformer(
+        ON cleaned AS InputTable
+        ON db.scale_fit AS ScaleFitTable DIMENSION
+    ) AS t
+)
+SELECT * FROM TD_XGBoostPredict(
+    ON transformed AS InputTable
+    ON db.model AS ModelTable DIMENSION
+    USING IDColumn('id')
+) AS dt;
+```
+
+**5. Persist large outputs with OUT TABLE — never stream model outputs back to the agent**
+
+```sql
+-- WRONG: streams the full model or large result set to the agent
+SELECT * FROM TD_XGBoost( ON db.training_data ... ) AS t;
+
+-- RIGHT: persist to a named table; agent receives only a status message
+SELECT * FROM TD_XGBoost(
+    ON db.training_data AS InputTable PARTITION BY ANY
+    OUT PERMANENT TABLE ModelTable(db.my_model)
+    USING ...
+) AS t;
+```
+
+**6. Use execute_query with small max_rows for validation only**
+
+`execute_query` is for checking results, previewing schemas, and validating output — not for analytics. Default `max_rows=100` exists for this reason. If you find yourself wanting to increase `max_rows` significantly to "process" data, that is a signal to use a native function instead.
+
+**7. Aggregate before returning — let the database do the grouping**
+
+```sql
+-- WRONG: return all prediction rows to agent to count outcomes
+SELECT * FROM TD_XGBoostPredict(...) AS t;
+
+-- RIGHT: aggregate in-database, return summary
+SELECT td_prediction, COUNT(*) AS n, AVG(confidence) AS avg_confidence
+FROM TD_XGBoostPredict(...) AS t
+GROUP BY td_prediction;
+```
+
+### Why this matters at scale
+
+| Operation | 1M rows | 1B rows | 10B rows |
+|-----------|---------|---------|----------|
+| `SELECT *` to agent | slow | session-killing | impossible |
+| `TD_ColumnSummary` | fast | fast | fast |
+| CTE pipeline → result | fast | fast | fast |
+
+Native functions distribute across all AMPs. The result set returned to the agent is always small — a model table, a metrics row, a summary. The compute scales with the platform; the data movement does not grow with table size.
+
+---
+
 ## Common Operations → Native Function Mapping
 
 ### Data Exploration & Statistics
