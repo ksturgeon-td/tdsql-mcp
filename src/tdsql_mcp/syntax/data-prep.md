@@ -295,6 +295,108 @@ FROM db.campaign;
 
 ---
 
+## Class Imbalance / Oversampling
+
+### TD_SMOTE
+
+Generates synthetic minority-class samples to address class imbalance in training data. Supports four oversampling strategies: standard SMOTE, ADASYN, Borderline-SMOTE, and SMOTE-NC (for mixed numeric + categorical features).
+
+> **Output contains synthetic samples only** — `UNION ALL` with the original training table to produce the full augmented dataset before training.
+
+```sql
+SELECT * FROM TD_SMOTE(
+    ON { db.table | db.view | (query) } AS InputTable PARTITION BY ANY
+    [ ON db.encodings_table AS EncodingsTable DIMENSION ]   -- smotenc only; see below
+    USING
+        IDColumn('id_col')                                  -- required; unique row identifier
+        ResponseColumn('response_col')                      -- required; numeric class label column
+        InputColumns({ 'col' | col_range }[,...])           -- required; numeric columns used for synthesis
+        MinorityClass('minority_label')                     -- required; minority class label (integer, quoted as string)
+        [ CategoricalInputColumns({ 'col' | col_range }[,...]) ]  -- smotenc only; required for smotenc
+        [ MedianStandardDeviation(med) ]                    -- smotenc only; required for smotenc (see tip below)
+        [ OversamplingFactor(5) ]                           -- default 5; value of 1.0 = same count as minority class
+        [ SamplingStrategy('smote'|'adasyn'|'borderline'|'smotenc') ]  -- default 'smote'
+        [ NumberOfNeighbors(5) ]                            -- default 5; see note on effective neighbors below
+        [ FillSampleID('true') ]                            -- default true; writes source obs ID to id_col in output
+        [ ValueForNonInputColumns('sample'|'neighbor'|'null') ]  -- default 'sample'
+        [ Seed(186006) ]                                    -- default 186006; set for deterministic output
+) AS t;
+```
+
+**Combine with original data:**
+```sql
+-- Full augmented training set (original + synthetic minority samples)
+SELECT * FROM db.training_table
+UNION ALL
+SELECT * FROM TD_SMOTE(
+    ON db.training_table PARTITION BY ANY
+    USING
+        IDColumn('id')
+        ResponseColumn('label')
+        InputColumns('feat1', 'feat2', 'feat3')
+        MinorityClass('1')
+        OversamplingFactor(5)
+) AS t;
+```
+
+**Notes:**
+
+- **NumberOfNeighbors gotcha** — TD_KNN includes the observation itself as neighbor #1. `NumberOfNeighbors(5)` uses only 4 neighbors for interpolation. Set to 6 to get 5 effective neighbors; adjust accordingly.
+- **OversamplingFactor** — value of `1.0` generates as many synthetic samples as there are minority observations. Default `5` generates 5× the minority count. ADASYN uses local density estimation, so the actual count may differ slightly.
+- **SamplingStrategy 'adasyn' / 'borderline'** — for extreme imbalance or very few minority samples, oversample in fractions rather than using a large OversamplingFactor to avoid duplicates.
+- **FillSampleID** — when `true`, the `id_col` in the output contains the original minority observation ID used to generate the synthetic sample, not a new unique ID. Set to `false` and generate your own IDs if you need unique keys in the augmented table.
+- **ValueForNonInputColumns** — controls the value of columns not listed in `InputColumns`: `'sample'` (value from source observation), `'neighbor'` (value from the chosen neighbor), or `'null'`.
+
+**SMOTE-NC (mixed numeric + categorical):**
+
+SMOTE-NC requires an `EncodingsTable` produced by `TD_OrdinalEncodingFit` and a pre-computed `MedianStandardDeviation` value.
+
+```sql
+-- Step 1: build encodings table for categorical columns (Approach AUTO, no DefaultValue)
+CREATE TABLE db.smote_encodings AS (
+    SELECT * FROM TD_OrdinalEncodingFit(
+        ON db.training_table PARTITION BY ANY
+        USING
+            TargetColumn('cat_col1', 'cat_col2')
+            Approach('AUTO')
+    ) AS t
+) WITH DATA;
+
+-- Step 2: compute MedianStandardDeviation (median of std devs of numeric input columns, minority class only)
+SELECT StatValue AS MedianValue FROM TD_UnivariateStatistics(
+    ON (
+        SELECT * FROM TD_UnivariateStatistics(
+            ON (SELECT * FROM db.training_table WHERE label = 1) AS InputTable
+            USING
+                TargetColumns('feat1', 'feat2', 'feat3')
+                Stats('STANDARD DEVIATION')
+        ) AS dt
+    ) AS InputTable
+    USING
+        TargetColumns('StatValue')
+        Stats('MED')
+) AS dtu;
+
+-- Step 3: run TD_SMOTE with smotenc
+SELECT * FROM TD_SMOTE(
+    ON db.training_table PARTITION BY ANY
+    ON db.smote_encodings AS EncodingsTable DIMENSION
+    USING
+        IDColumn('id')
+        ResponseColumn('label')
+        InputColumns('feat1', 'feat2', 'feat3')
+        CategoricalInputColumns('cat_col1', 'cat_col2')
+        MinorityClass('1')
+        SamplingStrategy('smotenc')
+        MedianStandardDeviation(0.45)     -- value from Step 2
+        OversamplingFactor(3)
+) AS t;
+```
+
+> **smotenc restrictions:** Column aliasing is not allowed on `InputTable` or `EncodingsTable`. `EncodingsTable` must be a real table (no subquery); produce it from `TD_OrdinalEncodingFit` with `Approach('AUTO')` and **no** `DefaultValue` argument.
+
+---
+
 ## Fit/Transform Functions
 
 The following functions follow the two-phase Fit/Transform pattern. The Fit function learns parameters from training data (bin boundaries, encoding mappings, scaling factors, etc.) and writes them to a FitTable. The Transform function applies those parameters to any dataset.
