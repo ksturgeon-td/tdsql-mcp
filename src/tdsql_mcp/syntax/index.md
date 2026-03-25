@@ -6,7 +6,7 @@ Use `get_syntax_help(topic="<name>")` to load any topic below.
 | Topic | Description |
 |-------|-------------|
 | `sql-basics` | SELECT syntax, TOP N, SAMPLE, QUALIFY, CTEs, joins |
-| `data-types-casting` | Data types and CAST / type conversion patterns |
+| `data-types-casting` | Data types, CAST / type conversion patterns, VECTOR and Vector32 embedding types |
 | `conditional` | CASE, COALESCE, NULLIFZERO, ZEROIFNULL, NULLIF |
 
 ## Functions

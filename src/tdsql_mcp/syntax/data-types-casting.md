@@ -151,8 +151,87 @@ Parameterized: `CLOB(charlen=len, charset={LATIN|UNICODE})`
 → `CLOB(len)` with specified CHARACTER SET.
 Note: CLOB LATIN/UTF16 is only supported on the Block File System on the primary cluster.
 
+---
+
+## Vector Types — VECTOR and Vector32
+
+Teradata provides two UDT-based vector types for storing embedding arrays. Both are backed by packed binary representations; the difference is float precision.
+
+| Type | Precision | Bytes/dimension | Max dimensions | Backing type |
+|------|-----------|-----------------|----------------|--------------|
+| `VECTOR` | float64 (double) | 8 | 4096 | `VARBYTE(64000)` |
+| `Vector32` | float32 (single) | 4 | 4096 | `VARBYTE(32000)` |
+
+### Table definition
+
+```sql
+CREATE MULTISET TABLE db.embeddings (
+    id        INTEGER,
+    embedding VECTOR,          -- float64 vector
+    emb32     Vector32         -- float32 vector (half the storage)
+) PRIMARY INDEX (id);
+```
+
+### Inserting vectors
+
+Two equivalent construction paths — VARCHAR string or explicit `NEW` constructor:
+
+```sql
+-- Implicit string literal (comma-separated floats)
+INSERT INTO db.embeddings (id, embedding)
+VALUES (1, '-0.06944,0.080352,0.045963,0.006985,-0.000496');
+
+-- Explicit constructor
+INSERT INTO db.embeddings (id, embedding)
+VALUES (2, NEW Vector('-0.06944,0.080352,0.045963,0.006985,-0.000496'));
+
+-- VARBYTE insertion (hex-encoded 8-byte doubles; each float64 = 8 hex bytes)
+-- The following two inserts are equivalent:
+INSERT INTO db.embeddings (id, embedding) VALUES (3, '-0.06944,0.080352,0.045963');
+INSERT INTO db.embeddings (id, embedding)
+VALUES (3, 'F4C308E1D1C6B1BFA20E2BDCF291B43FC3EFA65B7688A73F'XB);
+```
+
+> `Vector32` follows the same construction syntax — use `NEW Vector32('...')` or an implicit string literal; VARBYTE values use 4-byte (float32) encoding.
+
+### Reading vectors back
+
+```sql
+-- Cast to VARCHAR for display (34000 recommended to support Unicode)
+SELECT id, CAST(embedding AS VARCHAR(34000)) AS embedding_str
+FROM db.embeddings;
+
+-- Check number of dimensions
+SELECT id, embedding.LENGTH() AS dims
+FROM db.embeddings;
+```
+
+### Typical workflow — store embeddings from an external source
+
+```sql
+-- Step 1: land raw embedding strings (e.g. from an API response) into a staging table
+CREATE VOLATILE TABLE stg_embeddings (
+    doc_id    INTEGER,
+    emb_str   VARCHAR(34000)
+) ON COMMIT PRESERVE ROWS;
+
+-- Step 2: insert into typed vector table
+INSERT INTO db.embeddings (id, embedding)
+SELECT doc_id, emb_str FROM stg_embeddings;
+
+-- Step 3: verify dimensions are consistent
+SELECT embedding.LENGTH() AS dims, COUNT(*) AS row_count
+FROM db.embeddings
+GROUP BY 1;
+```
+
+> **Storage tip:** Use `Vector32` when float32 precision is sufficient for your embedding model (most modern models are). It halves storage and can improve HNSW index build and search performance on large tables. See `vector-search` topic for indexing and similarity search.
+
+---
+
 ## Implicit Conversion Gotchas
 - `CHAR` comparisons pad with spaces: `'abc' = 'abc   '` is TRUE
 - Date arithmetic returns `INTEGER` (number of days): `end_date - start_date`
 - Mixing `CHAR` and `VARCHAR` in UNION requires explicit CAST
 - `NULL` comparisons: always use `IS NULL` / `IS NOT NULL`, never `= NULL`
+
