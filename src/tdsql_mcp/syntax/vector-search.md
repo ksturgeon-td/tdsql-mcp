@@ -209,7 +209,67 @@ SELECT * FROM TD_HNSW(
 
 ### TD_HNSWPredict
 
-*Documentation in progress — paste TD_HNSWPredict docs to continue.*
+Searches an HNSW graph index to find the approximate top-K nearest neighbors for each query vector. Returns one row per neighbor per query vector.
+
+> **ON clause note:** `ModelTable` is the first ON (the large graph); `InputTable` is `DIMENSION` (the small set of query vectors). This is the reverse of the typical Predict pattern.
+
+```sql
+SELECT * FROM TD_HNSWPredict(
+    ON db.hnsw_model AS ModelTable             -- graph built by TD_HNSW; PARTITION BY ANY or no partition
+    ON { db.table | db.view | (query) } AS InputTable DIMENSION  -- query vectors
+    USING
+        IdColumn('id_col')                     -- required; unique identifier in InputTable
+        VectorColumn('embedding_col')          -- required; VECTOR, Vector32, VARBYTE, or BYTE column
+        [ EfSearch(32) ]                       -- default 32; candidates considered during search; range [1, 1024]
+        [ TopK(10) ]                           -- default 10; nearest neighbors to return per query; range [1, 1024]
+        [ OutputSimilarity('false') ]          -- default false; false = distance column, true = similarity column
+        [ OutputNearestVector('false') ]       -- default false; true = include neighbor's vector in output
+        [ Accumulate({ 'col' | col_range }[,...]) ]  -- columns to copy from InputTable to output
+        [ SingleInputRow('false') ]            -- default false; set true when InputTable has exactly one row
+        [ UseSIMD('false') ]                   -- default false; enable for SIMD acceleration
+) AS t;
+```
+
+> **DistanceMeasure is inherited from the index** — it is not specified at search time. The measure used at build time (TD_HNSW) is encoded in the graph and automatically applied here.
+
+**Output columns** (one row per nearest neighbor per query vector):
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id_col` | same as InputTable | Query vector identifier |
+| `nearest_neighbor_id` | INTEGER | ID of the nearest neighbor from the index |
+| `nearest_neighbor_distance` | REAL | Distance to neighbor — present when `OutputSimilarity('false')` (default) |
+| `nearest_neighbor_similarity` | REAL | Similarity to neighbor — present when `OutputSimilarity('true')` |
+| `nearest_neighbor_vector` | VECTOR/Vector32/VARBYTE | Neighbor's vector — present when `OutputNearestVector('true')` |
+| `accumulate_col(s)` | any | Columns copied from InputTable |
+
+**EfSearch vs recall trade-off:**
+
+| EfSearch | Behavior |
+|----------|----------|
+| Low (e.g. 16) | Fast search; lower recall — some true nearest neighbors may be missed |
+| Default (32) | Balanced |
+| High (e.g. 128+) | Slower; higher recall; approaches exact search quality |
+
+> Set `EfSearch >= TopK` — searching fewer candidates than you want to return degrades recall significantly.
+
+**Semantic search example:**
+
+```sql
+-- Find top 5 nearest documents for each query vector
+SELECT * FROM TD_HNSWPredict(
+    ON db.document_index AS ModelTable
+    ON db.query_vectors AS InputTable DIMENSION
+    USING
+        IdColumn('query_id')
+        VectorColumn('embedding')
+        TopK(5)
+        EfSearch(64)
+        OutputSimilarity('true')
+        Accumulate('query_text')
+) AS t
+ORDER BY query_id, nearest_neighbor_similarity DESC;
+```
 
 ---
 
