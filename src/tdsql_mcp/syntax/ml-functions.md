@@ -486,3 +486,272 @@ SELECT * FROM TD_NaiveBayesPredict(
 | `Loglik_<response_i>` | REAL | When `Responses` specified; log likelihood per response value |
 | `Prob_<response_i>` | REAL | When `Responses` specified and `OutputProb('true')`; probability per response value |
 | `accumulate_column(s)` | any | Columns copied from InputTable |
+
+---
+
+## TD_OneClassSVM — Train/Predict
+
+Linear SVM for anomaly/novelty detection. All training data is assumed to belong to a single class (value 1) — no `ResponseColumn` needed. At predict time, outputs `1` (normal) or `0` (outlier). Uses the same Minibatch SGD engine as TD_GLM; see TD_GLM for SGD parameter details.
+
+**Constraints:**
+- `AS InputTable` alias is mandatory
+- PARTITION BY ANY only — no micromodeling support
+- No `ResponseColumn` — one-class training only
+- No `OUT TABLE` for the model — capture via `CREATE TABLE AS (...) WITH DATA` or `INSERT/SELECT`
+- `Nesterov` defaults to `false` here (unlike TD_GLM which defaults to `true`)
+
+### Train
+
+```sql
+SELECT * FROM TD_OneClassSVM(
+    ON { db.table | db.view | (query) } AS InputTable PARTITION BY ANY  -- AS InputTable mandatory
+    [ OUT TABLE MetaInformationTable(db.meta_table) ]
+    USING
+        InputColumns({ 'col' | col_range }[,...])     -- required; no ResponseColumn needed
+        [ BatchSize(10) ]                             -- default 10; 0 = full batch Gradient Descent
+        [ MaxIterNum(300) ]                           -- default 300
+        [ RegularizationLambda(0.02) ]                -- default 0.02; 0 = no regularization
+        [ Alpha(0.15) ]                               -- default 0.15 (15% L1, 85% L2); only when Lambda > 0
+        [ IterNumNoChange(50) ]                       -- default 50; 0 = no early stopping
+        [ Tolerance(0.001) ]                          -- default 0.001
+        [ Intercept('true') ]                         -- default true
+        [ LearningRate('constant'|'optimal'|'invtime'|'adaptive') ]  -- default 'invtime'
+        [ InitialEta(0.05) ]                          -- default 0.05
+        [ DecayRate(0.25) ]                           -- default 0.25; invtime and adaptive only
+        [ DecaySteps(5) ]                             -- default 5; adaptive only
+        [ Momentum(0) ]                               -- default 0 (disabled); recommended range 0.6–0.95
+        [ Nesterov('false') ]                         -- default false; only effective when Momentum > 0
+        [ LocalSGDIterations(0) ]                     -- default 0 (disabled); recommended 10 when enabled
+) AS t;
+```
+
+**Model output schema** (save via `CREATE TABLE AS (...) WITH DATA` or `INSERT/SELECT`):
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `attribute` | SMALLINT | Index: 0=intercept, positive=predictor, negative=model metric |
+| `predictor` | VARCHAR | Predictor or metric name |
+| `estimate` | FLOAT | Predictor weight or numeric metric value |
+| `value` | VARCHAR | String metric value (e.g., `HINGE` for LossFunction, `L2` for Regularization) |
+
+**MetaInformationTable schema:**
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `iteration` | INTEGER | Iteration (epoch) number |
+| `num_rows` | BIGINT | Total rows processed |
+| `eta` | FLOAT | Learning rate for this iteration |
+| `loss` | FLOAT | Loss value |
+| `best_loss` | FLOAT | Best loss up to this iteration |
+
+### Predict
+
+```sql
+SELECT * FROM TD_OneClassSVMPredict(
+    ON { db.table | db.view | (query) } AS InputTable PARTITION BY ANY
+    ON { db.table | db.view | (query) } AS ModelTable DIMENSION
+    USING
+        IDColumn('id_col')                           -- required; unique row identifier
+        [ OutputProb('false') ]                      -- default false
+        [ Responses('0'[,'1']) ]                     -- requires OutputProb('true'); 0 = outlier, 1 = normal
+        [ Accumulate({ 'col' | col_range }[,...]) ]
+) AS t;
+```
+
+**Predict output columns:**
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id_column` | any | Unique observation identifier |
+| `prediction` | FLOAT | `0` = outlier, `1` = normal observation |
+| `prob` | FLOAT | When `OutputProb('true')` and no `Responses`; probability of predicted class |
+| `prob_0` | FLOAT | When `Responses` specified; probability of class 0 (outlier) |
+| `prob_1` | FLOAT | When `Responses` specified; probability of class 1 (normal) |
+| `accumulate_column(s)` | any | Columns copied from InputTable |
+
+---
+
+## TD_SVM — Train/Predict
+
+Linear SVM for binary classification (hinge loss) and regression (epsilon-insensitive loss). Uses the same Minibatch SGD engine as TD_GLM and TD_OneClassSVM. Classification supports binary response only (0 or 1).
+
+**Constraints:**
+- `AS InputTable` alias is mandatory
+- PARTITION BY ANY only — no micromodeling support
+- Classification: response values must be 0 or 1 (binary only)
+- No `OUT TABLE` for the model — capture via `CREATE TABLE AS (...) WITH DATA` or `INSERT/SELECT`
+- `Nesterov` defaults to `false` (unlike TD_GLM which defaults to `true`)
+- `ModelType` must match between Train and Predict
+
+### Train
+
+```sql
+SELECT * FROM TD_SVM(
+    ON { db.table | db.view | (query) } AS InputTable PARTITION BY ANY  -- AS InputTable mandatory
+    [ OUT TABLE MetaInformationTable(db.meta_table) ]
+    USING
+        InputColumns({ 'col' | col_range }[,...])
+        ResponseColumn('response_col')               -- required; classification: 0 or 1 only
+        [ ModelType('Classification'|'Regression') ] -- default 'Classification'
+        [ Epsilon(0.1) ]                             -- default 0.1; Regression only; epsilon-insensitive loss threshold
+        [ BatchSize(10) ]                            -- default 10; 0 = full batch Gradient Descent
+        [ MaxIterNum(300) ]                          -- default 300
+        [ RegularizationLambda(0.02) ]               -- default 0.02; 0 = no regularization
+        [ Alpha(0.15) ]                              -- default 0.15 (15% L1, 85% L2); only when Lambda > 0
+        [ IterNumNoChange(50) ]                      -- default 50; 0 = no early stopping
+        [ Tolerance(0.001) ]                         -- default 0.001
+        [ Intercept('true') ]                        -- default true
+        [ ClassWeights('0:1.0,1:1.0') ]              -- Classification only; format 'class:weight,...'
+        [ LearningRate('constant'|'optimal'|'invtime'|'adaptive') ]  -- default 'invtime' (Regression) / 'optimal' (Classification)
+        [ InitialEta(0.05) ]                         -- default 0.05
+        [ DecayRate(0.25) ]                          -- default 0.25; invtime and adaptive only
+        [ DecaySteps(5) ]                            -- default 5; adaptive only
+        [ Momentum(0) ]                              -- default 0 (disabled); recommended range 0.6–0.95
+        [ Nesterov('false') ]                        -- default false; only effective when Momentum > 0
+        [ LocalSGDIterations(0) ]                    -- default 0 (disabled); recommended 10 when enabled
+) AS t;
+```
+
+**Model output schema** (save via `CREATE TABLE AS (...) WITH DATA` or `INSERT/SELECT`):
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `attribute` | SMALLINT | Index: 0=intercept, positive=predictor, negative=model metric |
+| `predictor` | VARCHAR | Predictor or metric name |
+| `estimate` | FLOAT | Predictor weight or numeric metric value |
+| `value` | VARCHAR | String metric value (e.g., `HINGE` for Classification, `EPSILON_INSENSITIVE` for Regression, `L2` for Regularization) |
+
+**MetaInformationTable schema:**
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `iteration` | INTEGER | Iteration (epoch) number |
+| `num_rows` | BIGINT | Total rows processed |
+| `eta` | FLOAT | Learning rate for this iteration |
+| `loss` | FLOAT | Loss value |
+| `best_loss` | FLOAT | Best loss up to this iteration |
+
+### Predict
+
+```sql
+SELECT * FROM TD_SVMPredict(
+    ON { db.table | db.view | (query) } AS InputTable PARTITION BY ANY
+    ON { db.table | db.view | (query) } AS ModelTable DIMENSION
+    USING
+        IDColumn('id_col')                           -- required; unique row identifier
+        [ ModelType('Classification'|'Regression') ] -- default 'Classification'; must match TD_SVM training
+        [ OutputProb('false') ]                      -- default false; Classification only
+        [ Responses('0'[,'1']) ]                     -- requires OutputProb('true'); values 0 or 1
+        [ Accumulate({ 'col' | col_range }[,...]) ]
+) AS t;
+```
+
+**Predict output columns:**
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id_column` | same as input | Unique observation identifier |
+| `prediction` | SMALLINT (Classification) / FLOAT (Regression) | Predicted class or value |
+| `prob` | FLOAT | When `OutputProb('true')` and no `Responses`; probability of predicted class |
+| `prob_0` | FLOAT | When `Responses` specified; probability of class 0 |
+| `prob_1` | FLOAT | When `Responses` specified; probability of class 1 |
+| `accumulate_column(s)` | any | Columns copied from InputTable |
+
+---
+
+## TD_XGBoost — Train/Predict
+
+Gradient boosted decision tree ensemble for classification and regression. Builds multiple boosted trees in parallel across AMPs. Supports multiclass classification (max 500 classes) and regression.
+
+**Constraints:**
+- InputTable: no PARTITION BY column; PARTITION BY ANY allowed
+- All input columns must be numeric; no double-quoted column names
+- Classification: `ResponseColumn` must be INTEGER/BIGINT/SMALLINT/BYTEINT
+- No `OUT TABLE` for the model — capture via `CREATE TABLE AS (...) WITH DATA` or `INSERT/SELECT`
+- `NumParallelTrees` and `CoverageFactor` are mutually exclusive
+- `ModelType` must match between Train and Predict
+
+### Train
+
+```sql
+SELECT * FROM TD_XGBoost(
+    ON { db.table | db.view | (query) } AS INPUTTABLE [ PARTITION BY ANY ]  -- no PARTITION BY column
+    [ OUT [ PERMANENT | VOLATILE ] TABLE MetaInformationTable(db.meta_table) ]
+    USING
+        InputColumns({ 'col' | col_range }[,...])    -- required; all numeric; no double-quoted names
+        ResponseColumn('response_col')               -- required; classification: INTEGER/BIGINT/SMALLINT/BYTEINT only
+        [ ModelType('Classification'|'Regression') ] -- default 'Regression'
+        [ MaxDepth(5) ]                              -- default 5; tree depth stopping criterion
+        [ MinNodeSize(1) ]                           -- default 1; min node size stopping criterion
+        [ NumParallelTrees(-1) ]                     -- default -1 (= num AMPs with data); range 1–10000
+                                                     -- also accepts legacy name NumBoostedTrees
+                                                     -- mutually exclusive with CoverageFactor
+        [ CoverageFactor(1.0) ]                      -- default 1.0 (100%); mutually exclusive with NumParallelTrees
+        [ NumBoostRounds(10) ]                       -- default 10; boosting iterations; range 1–100000
+                                                     -- also accepts legacy name IterNum
+        [ LearningRate(0.5) ]                        -- default 0.5; per-step shrinkage; range (0, 1]
+                                                     -- also accepts legacy name ShrinkageFactor
+        [ RegularizationLambda(1) ]                  -- default 1; L2 regularization; range [0, 100000]; 0 = none
+        [ ColumnSampling(1.0) ]                      -- default 1.0; feature fraction per boost; range (0, 1]
+        [ MinImpurity(0.0) ]                         -- default 0.0; stop splitting below this impurity
+        [ TreeSize(-1) ]                             -- default -1 (auto); rows per tree input sample
+        [ BaseScore(0) ]                             -- default 0 (Regression); 0.5 (Classification, must be in range (0,1))
+        [ Seed(1) ]                                  -- default 1; random seed for column sampling
+) AS t;
+```
+
+> **Small datasets / imbalanced classes:** Redistribute input to one AMP so each tree trains on a representative sample. Add a new column (e.g., `pi_col`) populated with a constant value and define it as the primary index — do not repurpose an existing column. For large clusters with small datasets, or classification with imbalanced classes, this redistribution significantly improves model quality.
+
+**Model output schema** (save via `CREATE TABLE AS (...) WITH DATA` or `INSERT/SELECT`):
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `task_index` | SMALLINT | AMP that produced this tree |
+| `tree_num` | SMALLINT | Boosted tree identifier |
+| `iter` | SMALLINT | Boosting round number |
+| `class_num` | SMALLINT | [Classification only] Class index; range [0, K-1] for K classes |
+| `tree_order` | SMALLINT | Sequence number for multi-chunk JSON |
+| `regression_tree` or `classification_tree` | VARCHAR(32000) | JSON decision tree per chunk |
+
+**MetaInformationTable schema** (OUT TABLE — training accuracy per iteration):
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `task_index` | SMALLINT | AMP identifier |
+| `iter` | SMALLINT | Boosting round number |
+| `tree_num` | SMALLINT | Boosted tree identifier |
+| `mse` / `accuracy` | DOUBLE | Regression: MSE per iteration; Classification: accuracy per iteration |
+| `average residuals` / `deviance` | DOUBLE | Regression: avg residuals; Classification: deviance |
+
+### Predict
+
+```sql
+SELECT * FROM TD_XGBoostPredict(
+    ON { db.table | db.view | (query) } AS InputTable [ PARTITION BY ANY ]
+    ON { db.table | db.view | (query) } AS ModelTable DIMENSION
+    USING
+        IDColumn({ 'id_col' | id_col_range })        -- required; no double-quoted names
+        [ ModelType('Classification'|'Regression') ] -- default: DOUBLE output; 'Classification' = INTEGER output
+        [ NumParallelTrees(1000) ]                   -- default 1000; limits trees loaded; fewer = faster but less accurate
+                                                     -- also accepts legacy name NumBoostedTrees
+        [ NumBoostRounds(10) ]                       -- default 10; limits iterations per tree; fewer = faster but less accurate
+                                                     -- also accepts legacy name IterNum
+        [ OutputProb('false') ]                      -- default false; Classification only
+        [ Responses('response'[,...]) ]              -- Classification only; requires OutputProb('true')
+        [ Accumulate({ 'col' | col_range }[,...]) ]
+) AS t;
+```
+
+> **Performance note:** `NumParallelTrees` and `NumBoostRounds` limit how much of the model is loaded at predict time — reducing either speeds up prediction but may reduce accuracy. When the model exceeds available memory, trees are cached in local spool, further impacting performance.
+
+**Predict output columns:**
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id_column` | same as input | Unique row identifier |
+| `prediction` | DOUBLE PRECISION (default) / INTEGER (when `ModelType('Classification')`) | Predicted value or class |
+| `confidence_lower` | DOUBLE PRECISION | When `OutputProb('false')`; for classification, equals probability of predicted class |
+| `confidence_upper` | DOUBLE PRECISION | When `OutputProb('false')`; for classification, equals probability of predicted class |
+| `prob` | DOUBLE PRECISION | When `OutputProb('true')` and no `Responses`; probability of predicted class |
+| `prob_response` | DOUBLE PRECISION | When `OutputProb('true')` and `Responses` specified; one column per response value |
+| `accumulate_column(s)` | same as input | Columns copied from InputTable |
