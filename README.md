@@ -12,6 +12,71 @@ This server solves that with a structured syntax reference library and an agent 
 
 ---
 
+## Why This Matters
+
+The conventional pattern for AI-assisted analytics looks like this:
+
+```
+Agent pulls data → processes in Python / LLM context → returns result
+```
+
+This works at small scale but collapses under real-world conditions: the data transfer is expensive, the LLM context fills with raw data instead of insights, results are ephemeral and non-reproducible, and nothing produced is reusable at scale.
+
+The in-database approach enabled by this server inverts that model:
+
+```
+Agent orchestrates SQL → analytics execute on the platform → only results returned
+```
+
+### Zero Data Movement
+
+Native Teradata table operators execute where the data lives — across all AMPs in parallel. No rows are transferred to a client for processing. Whether the operation is computing summary statistics on a billion-row table, fitting a XGBoost model, or running a vector similarity search, the data stays on the platform. What crosses the wire is the result, not the input.
+
+This isn't just a performance consideration. It eliminates a class of problems: no serialization overhead, no memory pressure on the client, no network bottleneck, no privacy risk from data leaving the platform boundary.
+
+### Token and Context Efficiency
+
+When an agent pulls raw data into its context window to analyze it, it burns tokens on data that a SQL function could process in a single pass. A table of a million rows passed to an LLM for statistical analysis is a context window catastrophe. The same analysis via `TD_UnivariateStatistics` returns a compact result set — a handful of rows — that the agent can reason about directly.
+
+This means the agent's context stays clean: **the LLM reasons about results, not raw data**. Fewer tokens consumed. Longer, more coherent conversations. More headroom for complex multi-step workflows.
+
+### AMP-Parallel Performance and Repeatability
+
+Teradata's native analytics functions are not ordinary SQL — they are massively parallel table operators distributed across the AMP architecture. A `TD_XGBoost` training call, a `TD_KMeans` clustering run, or a `TD_ColumnTransformer` preprocessing pass all execute across every AMP simultaneously. The agent gets the benefit of the platform's full parallel compute without orchestrating any of it.
+
+Repeatability follows naturally from this model. Fit functions persist their learned parameters to named tables. Model training persists model weights. The same `TD_ScaleTransform` applied with the same `ScaleFitTable` produces identical output every time — on training data, on new batches, or on a single incoming row. This is not incidental; it is a structural property of the Fit/Transform and Train/Predict patterns built into the library.
+
+### From Agent Session to Operational Pipeline
+
+The highest-value outcome of this architecture is not ad-hoc analysis — it is the transition from agent-assisted exploration to a production SQL pipeline that runs independently at any scale and concurrency.
+
+The CTE prediction pipeline pattern captures this directly:
+
+```sql
+-- This query is a complete operational scoring pipeline.
+-- It requires no Python, no client-side processing, no agent at runtime.
+-- Any process with database access can call it.
+WITH transformed AS (
+    SELECT * FROM TD_ColumnTransformer(
+        ON db.incoming_data AS InputTable
+        ON db.impute_fit    AS ImputeFitTable        DIMENSION
+        ON db.encode_fit    AS OneHotEncodingFitTable DIMENSION
+        ON db.scale_fit     AS ScaleFitTable          DIMENSION
+    ) AS t
+)
+SELECT * FROM TD_XGBoostPredict(
+    ON transformed AS InputTable
+    ON db.fraud_model AS ModelTable DIMENSION
+    USING IDColumn('txn_id') Accumulate('amount', 'merchant')
+) AS dt;
+```
+
+An agent builds and validates this pipeline. Once it works, it is promoted to a view, a stored procedure, or a scheduled job. The agent is no longer in the loop at inference time. The pipeline runs in-situ, at the platform's full scale and concurrency, against whatever volume of incoming data the business requires.
+
+This is the progression this server is designed to enable: **exploration → validation → operationalization** — entirely within Teradata, without the data ever leaving the platform.
+
+---
+
 ## The Syntax Reference Library
 
 The `get_syntax_help` tool (and the `teradata://syntax/{topic}` resources) expose a comprehensive, agent-optimized reference library covering the full Teradata Vantage analytics stack.
