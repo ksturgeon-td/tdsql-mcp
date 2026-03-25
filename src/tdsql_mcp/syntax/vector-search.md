@@ -275,4 +275,122 @@ ORDER BY query_id, nearest_neighbor_similarity DESC;
 
 ### TD_HNSWSummary
 
-*Documentation in progress — paste TD_HNSWSummary docs to continue.*
+Inspects a built HNSW index — returns one row per graph node with layer assignments, neighbor connections, and model build metadata. No `USING` arguments; takes only a `ModelTable`.
+
+```sql
+SELECT * FROM TD_HNSWSummary(
+    ON db.hnsw_model AS ModelTable   -- PARTITION BY ANY or no partition
+) AS t;
+```
+
+**Output columns** (one row per node in the graph):
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `amp_id` | INTEGER | AMP on which this node resides |
+| `graph_id` | INTEGER | Graph ID for the HNSW graph on this AMP |
+| `node_id` | BIGINT | Internal node ID assigned during build |
+| `layer_id` | INTEGER | Layer in the HNSW hierarchy (higher = sparser, longer-range connections) |
+| `input_row_id` | BIGINT | Original ID from the InputTable used in TD_HNSW build |
+| `node_vector` | VECTOR | Embedding vector for this node |
+| `num_neighbors` | INTEGER | Number of neighbor connections for this node |
+| `neighbor_node_id` | VECTOR | Packed array of neighbor node IDs |
+| `model_info` | VARCHAR(64000) | Build metadata (parameters, graph statistics) |
+
+> **Output size:** one row per node across all layers and AMPs — can be very large for big indexes. Use aggregation to summarize:
+
+```sql
+-- Graph summary: nodes per layer, avg neighbor count
+SELECT layer_id,
+       COUNT(*)            AS node_count,
+       AVG(num_neighbors)  AS avg_neighbors,
+       MAX(num_neighbors)  AS max_neighbors
+FROM TD_HNSWSummary(
+    ON db.hnsw_model AS ModelTable
+) AS t
+GROUP BY layer_id
+ORDER BY layer_id DESC;
+
+-- Check model build parameters (model_info from any one row)
+SELECT TOP 1 model_info
+FROM TD_HNSWSummary(ON db.hnsw_model AS ModelTable) AS t;
+```
+
+---
+
+## KMeans IVF Pattern — Scalable Approximate Search
+
+For very large vector tables where even HNSW build time is prohibitive, the Inverted File Index (IVF) pattern uses `TD_KMeans` to partition the vector space into clusters, then restricts search to only the nearest clusters at query time.
+
+**Concept:** cluster all vectors into K groups by their embedding centroids. At search time, find the Y nearest cluster centroids to the query vector, then run exact similarity search only within those clusters — a small fraction of the total dataset.
+
+```sql
+-- Step 1: cluster all vectors into K groups (run once, save centroids + assignments)
+CREATE TABLE db.vector_clusters AS (
+    SELECT * FROM TD_KMeansPredict(
+        ON db.normalized_embeddings AS InputTable PARTITION BY ANY
+        ON (
+            SELECT * FROM TD_KMeans(
+                ON db.normalized_embeddings AS InputTable
+                USING
+                    IdColumn('doc_id')
+                    TargetColumns('embedding')
+                    NumClusters(100)              -- K; tune based on dataset size
+                    MaxIterNum(300)
+                    DistanceMeasure('cosine')
+            ) AS t
+        ) AS ModelTable DIMENSION
+        USING
+            IdColumn('doc_id')
+            TargetColumns('embedding')
+    ) AS t
+) WITH DATA;
+
+-- Step 2: at search time, find the Y nearest cluster centroids to the query vector
+-- (run TD_VectorDistance against the centroid table — small, fast)
+CREATE VOLATILE TABLE nearest_clusters AS (
+    SELECT Reference_ID AS cluster_id
+    FROM TD_VectorDistance(
+        ON db.query_vector AS TargetTable PARTITION BY ANY
+        ON db.cluster_centroids AS ReferenceTable DIMENSION
+        USING
+            TargetIDColumn('query_id')
+            TargetFeatureColumns('embedding')
+            RefIDColumn('cluster_id')
+            RefFeatureColumns('embedding')
+            DistanceMeasure('Cosine')
+            TopK(5)                               -- Y nearest clusters to search
+    ) AS t
+) WITH DATA ON COMMIT PRESERVE ROWS;
+
+-- Step 3: exact similarity search within only the nearest clusters
+SELECT * FROM TD_VectorDistance(
+    ON (
+        SELECT e.*
+        FROM db.normalized_embeddings e
+        JOIN db.vector_clusters c ON e.doc_id = c.doc_id
+        WHERE c.TD_ClusterID IN (SELECT cluster_id FROM nearest_clusters)
+    ) AS TargetTable PARTITION BY ANY
+    ON db.query_vector AS ReferenceTable DIMENSION
+    USING
+        TargetIDColumn('doc_id')
+        TargetFeatureColumns('embedding')
+        RefIDColumn('query_id')
+        RefFeatureColumns('embedding')
+        DistanceMeasure('Cosine')
+        TopK(10)
+) AS t
+ORDER BY Distance ASC;
+```
+
+**When to use IVF vs HNSW:**
+
+| | HNSW | KMeans IVF |
+|---|------|------------|
+| Build | One-time graph build | Cluster once; centroids reusable |
+| Search | Single function call | Two-step (centroid lookup → cluster search) |
+| Recall | High (tunable via EfSearch) | Depends on Y clusters searched |
+| Best for | Moderate-to-large datasets; online search | Very large datasets; batch search |
+| Update | Incremental (TD_HNSW AlterOperation) | Re-cluster periodically |
+
+> **Tip:** increase Y (clusters searched in Step 2) to improve recall at the cost of search time. A good starting point is Y = sqrt(K).
