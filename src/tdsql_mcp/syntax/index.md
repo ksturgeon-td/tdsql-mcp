@@ -49,6 +49,7 @@ Use `get_syntax_help(topic="<name>")` to load any topic below.
 |-------|-------------|
 | `catalog-views` | DBC.* system views for schema discovery |
 | `query-tuning` | EXPLAIN, PI design, collect stats, query rewrite tips |
+| `authorization-objects` | CREATE/REPLACE/GRANT authorization objects for external service credentials (AI functions, external procedures) |
 
 ---
 
