@@ -8,20 +8,40 @@ Rather than embedding API keys or access tokens directly in a function call, you
 
 ## CREATE / REPLACE AUTHORIZATION
 
+Two forms are supported: standard user/password credentials, and IAM role assumption (AWS only).
+
 ```sql
-{ CREATE | REPLACE } AUTHORIZATION [DatabaseName.]auth_object_name
-    USER     'user_value'
-    PASSWORD 'password_value'
-    [ SESSION_TOKEN 'session_token_value' ];
+{ CREATE | REPLACE } AUTHORIZATION [DatabaseName.]authorization_name
+    { user_password_auth | extended_auth }
+
+-- Form 1: user_password_auth (all providers)
+USER     'user_value'
+PASSWORD 'password_value'
+[ SESSION_TOKEN 'session_token_value' ]
+
+-- Form 2: extended_auth (AWS IAM role assumption only)
+USING AUTHSERVICETYPE 'ASSUME_ROLE'
+ROLENAME 'arn:aws:iam::account-id:role/role-name'
+EXTERNALID 'external_id_value'
+[ DURATION_SECONDS 'duration_in_seconds' ]
 ```
 
+**Form 1 — user_password_auth:**
 - **`CREATE`** — creates a new authorization object; fails if it already exists
 - **`REPLACE`** — creates or replaces; use this to rotate credentials without dropping first
-- **`SESSION_TOKEN`** — required for Azure (ApiVersion) and GCP (AccessToken); optional for AWS; not used for NIM or LiteLLM
+- **`SESSION_TOKEN`** — required for Azure (ApiVersion) and GCP (AccessToken); optional for AWS (SessionKey); not used for NIM or LiteLLM
+
+**Form 2 — extended_auth (ASSUME_ROLE):**
+- **`AUTHSERVICETYPE`** — only supported value is `'ASSUME_ROLE'`
+- **`ROLENAME`** — ARN of the AWS IAM role to assume
+- **`EXTERNALID`** — external ID value required by the IAM role trust policy (prevents confused deputy attacks in cross-account setups)
+- **`DURATION_SECONDS`** — session duration in seconds; range 900–43200; default 3600; must not exceed the maximum session duration configured on the IAM role itself
 
 ---
 
 ## Field Mapping by Provider
+
+### Form 1 — user_password_auth
 
 The three fields (`USER`, `PASSWORD`, `SESSION_TOKEN`) map to different provider-specific credentials:
 
@@ -32,6 +52,14 @@ The three fields (`USER`, `PASSWORD`, `SESSION_TOKEN`) map to different provider
 | **Google Cloud (GCP)** | Project | Region | AccessToken *(required)* |
 | **NVIDIA NIM** | ApiBase (endpoint URL) | ApiKey | *(not used)* |
 | **LiteLLM** | ApiBase (endpoint URL) | ApiKey | *(not used)* |
+
+### Form 2 — extended_auth (AWS ASSUME_ROLE only)
+
+| Field | Description |
+|-------|-------------|
+| `ROLENAME` | Full ARN of the IAM role to assume (`arn:aws:iam::account-id:role/role-name`) |
+| `EXTERNALID` | External ID value defined in the IAM role's trust policy |
+| `DURATION_SECONDS` | Session duration 900–43200 seconds; default 3600; must not exceed the IAM role's max session duration |
 
 ---
 
@@ -70,6 +98,14 @@ CREATE AUTHORIZATION db.td_gen_litellm_auth
 REPLACE AUTHORIZATION db.td_gen_aws_auth
     USER     '{NEW_ACCESS_KEY}'
     PASSWORD '{NEW_SECRET_KEY}';
+
+-- AWS Bedrock — IAM role assumption (ASSUME_ROLE)
+-- Use when Teradata nodes run with an instance profile that has STS AssumeRole permission
+CREATE AUTHORIZATION db.td_gen_aws_role_auth
+    USING AUTHSERVICETYPE 'ASSUME_ROLE'
+    ROLENAME 'arn:aws:iam::123456789012:role/teradata-bedrock-role'
+    EXTERNALID '{EXTERNAL_ID}'
+    DURATION_SECONDS '3600';
 ```
 
 ---

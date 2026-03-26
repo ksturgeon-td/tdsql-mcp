@@ -44,6 +44,7 @@ Use `get_syntax_help(topic="<name>")` to load any topic below.
 | `ml-patterns` | End-to-end ML pipeline patterns: CTE prediction pipeline, elbow method, train/evaluate/retrain loop, class imbalance workflow, micromodeling |
 | `vector-search` | Vector similarity search: TD_VectorDistance (exact), TD_HNSW/TD_HNSWPredict (approximate), KMeans IVF pattern |
 | `embeddings` | Embedding generation: AI_TextEmbeddings (cloud/NIM REST), ONNXEmbeddings (in-database BYOM), TD_WordEmbeddings; store → normalize → index → search pipeline |
+| `ai-text-analytics` | LLM-powered text analytics: AI_AnalyzeSentiment, AI_AskLLM, AI_DetectLanguage, AI_ExtractKeyPhrases, AI_MaskPII, AI_RecognizeEntities, AI_RecognizePIIEntities, AI_TextClassifier, AI_TextSummarize, AI_TextTranslate |
 
 ## Reference
 | Topic | Description |
@@ -68,6 +69,8 @@ Recommended topic reading order for common end-to-end tasks. Load these topics i
 | **Clustering (segmentation)** | `data-exploration` → `data-prep` → `ml-functions` → `ml-patterns` (elbow method) → `model-evaluation` (Silhouette) |
 | **Operationalize a trained model** | `fit-transform-pattern` → `ml-patterns` (CTE prediction pipeline) |
 | **Text classification / NLP** | `data-cleaning` → `text-analytics` → `model-evaluation` |
+| **LLM-powered text analytics** | `authorization-objects` → `llm-providers` → `ai-text-analytics` |
+| **PII detection / masking** | `authorization-objects` → `llm-providers` → `ai-text-analytics` (AI_MaskPII, AI_RecognizePIIEntities) |
 | **Imbalanced classes** | `data-prep` (TD_SMOTE) → `ml-patterns` (class imbalance workflow) → `model-evaluation` |
 | **Micromodeling (per-segment models)** | `ml-functions` (TD_GLM) → `ml-patterns` (micromodeling) |
 | **Semantic search / RAG embeddings** | `authorization-objects` → `llm-providers` → `embeddings` → `vector-search` |
