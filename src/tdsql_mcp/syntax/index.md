@@ -43,6 +43,7 @@ Use `get_syntax_help(topic="<name>")` to load any topic below.
 | `model-evaluation` | Model evaluation and explainability: TD_TrainTestSplit, TD_ClassificationEvaluator, TD_RegressionEvaluator, TD_ROC, TD_Silhouette, TD_SHAP |
 | `ml-patterns` | End-to-end ML pipeline patterns: CTE prediction pipeline, elbow method, train/evaluate/retrain loop, class imbalance workflow, micromodeling |
 | `vector-search` | Vector similarity search: TD_VectorDistance (exact), TD_HNSW/TD_HNSWPredict (approximate), KMeans IVF pattern |
+| `embeddings` | Embedding generation: AI_TextEmbeddings (cloud/NIM REST), ONNXEmbeddings (in-database BYOM), TD_WordEmbeddings; store → normalize → index → search pipeline |
 
 ## Reference
 | Topic | Description |
@@ -51,6 +52,8 @@ Use `get_syntax_help(topic="<name>")` to load any topic below.
 | `query-tuning` | EXPLAIN, PI design, collect stats, query rewrite tips |
 | `authorization-objects` | CREATE/REPLACE/GRANT authorization objects for external service credentials (AI functions, external procedures) |
 | `llm-providers` | LLM provider argument blocks for AI functions — Azure, AWS Bedrock, GCP, NVIDIA NIM, LiteLLM |
+| `byom-model-loading` | *(planned)* Loading ONNX, PMML, MOJO, and partner models into Teradata BYOM model tables |
+| `byom-scoring` | *(planned)* BYOM batch and real-time scoring functions |
 
 ---
 
@@ -67,6 +70,8 @@ Recommended topic reading order for common end-to-end tasks. Load these topics i
 | **Text classification / NLP** | `data-cleaning` → `text-analytics` → `model-evaluation` |
 | **Imbalanced classes** | `data-prep` (TD_SMOTE) → `ml-patterns` (class imbalance workflow) → `model-evaluation` |
 | **Micromodeling (per-segment models)** | `ml-functions` (TD_GLM) → `ml-patterns` (micromodeling) |
+| **Semantic search / RAG embeddings** | `authorization-objects` → `llm-providers` → `embeddings` → `vector-search` |
+| **In-database ONNX inference** | `byom-model-loading` → `embeddings` (ONNXEmbeddings) → `vector-search` |
 
 ---
 > **Adding topics:** Drop a new `.md` file into `src/tdsql_mcp/syntax/` and it appears here
