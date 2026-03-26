@@ -91,6 +91,8 @@ The `get_syntax_help` tool (and the `teradata://syntax/{topic}` resources) expos
 | **Machine Learning** | TD_XGBoost, TD_DecisionForest, TD_GLM, TD_KMeans, TD_KNN, TD_SVM, TD_OneClassSVM, TD_NaiveBayes — all with Train/Predict pairs |
 | **Model Evaluation** | TD_TrainTestSplit, TD_ClassificationEvaluator, TD_RegressionEvaluator, TD_ROC, TD_Silhouette, TD_SHAP |
 | **Text Analytics** | TD_NgramSplitter, TD_NaiveBayesTextClassifier, TD_NERExtractor, TD_SentimentExtractor, TD_TextParser, TD_TextMorph, TD_TextTagger, TD_TFIDF, TD_WordEmbeddings |
+| **LLM-Powered Text Analytics** | AI_AnalyzeSentiment, AI_AskLLM, AI_DetectLanguage, AI_ExtractKeyPhrases, AI_MaskPII, AI_RecognizeEntities, AI_RecognizePIIEntities, AI_TextClassifier, AI_TextSummarize, AI_TextTranslate |
+| **Embeddings & AI Integration** | AI_TextEmbeddings (Azure/AWS/GCP/NIM/LiteLLM REST), ONNXEmbeddings (in-database BYOM), authorization objects, LLM provider config |
 | **Vector Search** | VECTOR/Vector32 types, TD_VectorDistance, TD_HNSW/TD_HNSWPredict/TD_HNSWSummary, KMeans IVF pattern |
 | **Statistical Testing** | TD_ANOVA, TD_ChiSq, TD_FTest, TD_ZTest |
 | **Association & Path Analysis** | TD_Apriori, TD_CFilter, Sessionize, nPath, Attribution |
@@ -353,7 +355,7 @@ The library is designed to grow. To add a new topic:
 2. Add an entry to `index.md`
 3. Add relevant mappings to `guidelines.md`
 
-No code changes needed — the tool auto-discovers `.md` files at call time. Topics currently planned for future addition include `embeddings.md`, `time-series-patterns.md`, `json-functions.md`, and `geospatial.md`.
+No code changes needed — the tool auto-discovers `.md` files at call time. Topics currently planned for future addition include `byom-model-loading.md`, `byom-scoring.md`, `time-series-patterns.md`, `json-functions.md`, and `geospatial.md`.
 
 ---
 
