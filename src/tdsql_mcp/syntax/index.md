@@ -46,6 +46,17 @@ Use `get_syntax_help(topic="<name>")` to load any topic below.
 | `embeddings` | Embedding generation: AI_TextEmbeddings (cloud/NIM REST), ONNXEmbeddings (in-database BYOM), TD_WordEmbeddings; store → normalize → index → search pipeline |
 | `ai-text-analytics` | LLM-powered text analytics: AI_AnalyzeSentiment, AI_AskLLM, AI_DetectLanguage, AI_ExtractKeyPhrases, AI_MaskPII, AI_RecognizeEntities, AI_RecognizePIIEntities, AI_TextClassifier, AI_TextSummarize, AI_TextTranslate |
 
+## Unbounded Array Framework (UAF)
+| Topic | Description |
+|-------|-------------|
+| `uaf-concepts` | **Start here for UAF** — SERIES_SPEC, MATRIX_SPEC, ART_SPEC, GENSERIES_SPEC, EXECUTE FUNCTION INTO ART, ART layers, TD_EXTRACT_RESULTS |
+| `uaf-utility` | UAF general utility functions: TD_CONVERTTABLEFORUAF, TD_COPYART, TD_SINFO, TD_MINFO, TD_ISFINITE/ISINF/ISNAN, TD_INPUTVALIDATOR, TD_PLOT, TD_IMAGE2MATRIX, TD_MATRIX2IMAGE, TD_TRACKINGOP, TD_FILTERFACTORY1D |
+| `uaf-data-prep` | UAF data preparation and anomaly detection: TD_RESAMPLE, TD_BINARYSERIESOP, TD_BINARYMATRIXOP, TD_GENSERIES4FORMULA, TD_MATRIXMULTIPLY, TD_IQR |
+| `uaf-estimation` | UAF model preparation and parameter estimation: TD_ACF, TD_PACF, TD_DIFF, TD_UNDIFF, TD_SEASONALNORMALIZE, TD_UNNORMALIZE, TD_LINEAR_REGR, TD_MULTIVAR_REGR, TD_ARIMAESTIMATE, TD_ARIMAVALIDATE, TD_AUTOARIMA, TD_POWERTRANSFORM, TD_SMOOTHMA |
+| `uaf-forecasting` | UAF series forecasting: TD_ARIMAFORECAST, TD_HOLT_WINTERS_FORECASTER, TD_MAMEAN, TD_SIMPLEEXP, TD_DTW |
+| `uaf-diagnostics` | UAF diagnostic statistical tests: TD_DICKEY_FULLER, TD_DURBIN_WATSON, TD_BREUSCH_GODFREY, TD_BREUSCH_PAGAN_GODFREY, TD_WHITES_GENERAL, TD_GOLDFELD_QUANDT, TD_PORTMAN, TD_FITMETRICS, TD_SELECTION_CRITERIA, TD_CUMUL_PERIODOGRAM, TD_SIGNIF_PERIODICITIES, TD_SIGNIF_RESIDMEAN |
+| `uaf-dsp` | UAF digital signal processing and spatial: TD_DFFT/DFFT2, TD_IDFFT/IDFFT2, TD_DFFTCONV/DFFT2CONV, TD_CONVOLVE/CONVOLVE2, TD_DWT/DWT2D, TD_IDWT/IDWT2D, TD_POWERSPEC, TD_LINESPEC, TD_GENSERIES4SINUSOIDS, TD_SAX, TD_WINDOWDFFT |
+
 ## Reference
 | Topic | Description |
 |-------|-------------|
@@ -75,6 +86,10 @@ Recommended topic reading order for common end-to-end tasks. Load these topics i
 | **Micromodeling (per-segment models)** | `ml-functions` (TD_GLM) → `ml-patterns` (micromodeling) |
 | **Semantic search / RAG embeddings** | `authorization-objects` → `llm-providers` → `embeddings` → `vector-search` |
 | **In-database ONNX inference** | `byom-model-loading` → `embeddings` (ONNXEmbeddings) → `vector-search` |
+| **Time series forecasting (ARIMA)** | `uaf-concepts` → `uaf-data-prep` → `uaf-estimation` → `uaf-forecasting` → `uaf-diagnostics` |
+| **Regression on ordered series** | `uaf-concepts` → `uaf-data-prep` → `uaf-estimation` (TD_LINEAR_REGR / TD_MULTIVAR_REGR) → `uaf-diagnostics` |
+| **Frequency / spectral analysis** | `uaf-concepts` → `uaf-dsp` (TD_DFFT, TD_POWERSPEC, TD_LINESPEC) |
+| **Digital signal filtering** | `uaf-concepts` → `uaf-utility` (TD_FILTERFACTORY1D) → `uaf-dsp` (TD_CONVOLVE) |
 
 ---
 > **Adding topics:** Drop a new `.md` file into `src/tdsql_mcp/syntax/` and it appears here

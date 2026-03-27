@@ -99,6 +99,10 @@ The `get_syntax_help` tool (and the `teradata://syntax/{topic}` resources) expos
 | **ML Pipeline Patterns** | CTE prediction pipeline, elbow method, train/evaluate/retrain loop, class imbalance workflow, micromodeling |
 | **BYOM Model Loading** | PMML, H2O MOJO (open source + DAI), ONNX, Dataiku, DataRobot, MLeap — table schema, loading via BTEQ/Python, ONNX conversion workflow, sparse map tables, DAI license management |
 | **BYOM Scoring** | PMMLPredict, H2OPredict, ONNXPredict, DataikuPredict, DataRobotPredict, MLeapPredict; NLP transformers: ONNXSeq2Seq, ONNXClassification |
+| **UAF — Time Series** | ARIMA (estimate/validate/forecast), linear/multivariate regression, Holt-Winters, MAMEAN, SimpleExp, ACF/PACF, differencing, seasonal normalization, smoothing |
+| **UAF — Diagnostics** | Dickey-Fuller, Durbin-Watson, Breusch-Godfrey, Breusch-Pagan-Godfrey, White's General, Goldfeld-Quandt, Portman, FITMETRICS, SELECTION_CRITERIA, cumulative periodogram, significant periodicities |
+| **UAF — DSP & Spatial** | DFFT/DFFT2, IDFFT/IDFFT2, convolution, DWT/IDWT (1D/2D), power spectrum, line spectrum, SAX, windowed DFFT, geospatial tracking |
+| **UAF — Utilities** | Series/matrix inspection (TD_SINFO, TD_MINFO), input validation, image↔matrix conversion, in-database charting (TD_PLOT), FIR filter factory, table format conversion |
 | **Core SQL** | SELECT, CTEs, joins, window functions, date/time, aggregation, conditional logic, data types |
 
 ### Library Architecture
