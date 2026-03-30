@@ -36,6 +36,16 @@ EXECUTE FUNCTION TD_EXTRACT_RESULTS(
 );
 ```
 
+### Rename output columns before writing to ART
+
+Use the optional `COLUMNS(...)` clause to rename output columns in the same statement:
+
+```sql
+EXECUTE FUNCTION COLUMNS(OUT_Magnitude AS Magnitude) INTO VOLATILE ART(result_art)
+TD_BINARYSERIESOP(...);
+-- OUT_Magnitude is stored as Magnitude in result_art
+```
+
 ### Chain ART outputs as inputs
 
 Results from one UAF function feed into the next via `ART_SPEC`. This is the standard pattern for multi-step pipelines:
@@ -85,6 +95,7 @@ A multi-layer ART stores several result sets under one name. ARTPRIMARY can be q
 | `ARTCPDATA` | Cumulative periodogram data |
 | `ARTMETADATA` | Normalization metadata |
 | `ARTSELMETRICS` | Model selection metrics |
+| `ARTSTATSDATA` | Aggregate statistics (e.g., outlier counts from TD_IQR) |
 
 ### Which functions produce multi-layer ARTs
 
@@ -99,6 +110,7 @@ A multi-layer ART stores several result sets under one name. ARTPRIMARY can be q
 | `TD_MAMEAN` | ARTPRIMARY, ARTFITMETADATA, ARTFITRESIDUALS |
 | `TD_SIMPLEEXP` | ARTPRIMARY, ARTFITMETADATA, ARTFITRESIDUALS |
 | `TD_HOLT_WINTERS_FORECASTER` | ARTPRIMARY, ARTFITMETADATA, ARTSELMETRICS, ARTFITRESIDUALS |
+| `TD_IQR` | ARTPRIMARY, ARTSTATSDATA |
 
 ---
 

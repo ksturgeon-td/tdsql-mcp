@@ -220,6 +220,29 @@ Native functions distribute across all AMPs. The result set returned to the agen
 | Manual funnel / path counting | `nPath` | `path-analysis` |
 | Manual attribution modeling | `Attribution` | `path-analysis` |
 
+### Time Series, DSP & Spatial — Unbounded Array Framework (UAF)
+
+> **Multi-series parallelism:** A single UAF function call processes **all series instances simultaneously** across all AMPs. Whether you are fitting ARIMA models for 1 entity or 1 million, forecasting 10 sensors or 10 million, the call is identical — the platform distributes the work. Never loop, iterate, or run separate queries per entity. Pass all series at once and let the AMP architecture do the parallelism.
+
+| Instead of this | Use this (native function) | Topic |
+|-----------------|---------------------------|-------|
+| External time series forecasting (statsmodels, R forecast) | `TD_ARIMAESTIMATE` → `TD_ARIMAVALIDATE` → `TD_ARIMAFORECAST` | `uaf-estimation`, `uaf-forecasting` |
+| Per-entity forecast loops | Single UAF call with all series as SERIES_SPEC — all entities processed in parallel | `uaf-concepts` |
+| External seasonal decomposition | `TD_SEASONALNORMALIZE` | `uaf-estimation` |
+| External exponential smoothing | `TD_HOLT_WINTERS_FORECASTER`, `TD_SIMPLEEXP`, `TD_MAMEAN` | `uaf-forecasting` |
+| External regression on ordered sequences | `TD_LINEAR_REGR` / `TD_MULTIVAR_REGR` | `uaf-estimation` |
+| External autocorrelation / partial autocorrelation | `TD_ACF` / `TD_PACF` | `uaf-estimation` |
+| External differencing for stationarity | `TD_DIFF` / `TD_UNDIFF` | `uaf-estimation` |
+| External Fourier transform / frequency analysis | `TD_DFFT` / `TD_POWERSPEC` / `TD_LINESPEC` | `uaf-dsp` |
+| External convolution / digital filtering | `TD_CONVOLVE` (with `TD_FILTERFACTORY1D` coefficients) | `uaf-dsp`, `uaf-utility` |
+| External wavelet transform | `TD_DWT` / `TD_IDWT` | `uaf-dsp` |
+| External time series anomaly detection | `TD_IQR` | `uaf-data-prep` |
+| External DTW similarity | `TD_DTW` | `uaf-forecasting` |
+| External geospatial tracking metrics | `TD_TRACKINGOP` | `uaf-utility` |
+| Residual diagnostics after model fit | `TD_DICKEY_FULLER`, `TD_DURBIN_WATSON`, `TD_PORTMAN`, `TD_BREUSCH_GODFREY`, etc. | `uaf-diagnostics` |
+
+**Start here for UAF:** `get_syntax_help(topic="uaf-concepts")` — covers SERIES_SPEC, MATRIX_SPEC, ART_SPEC, the `EXECUTE FUNCTION INTO ART` execution pattern, ART layers, and TD_EXTRACT_RESULTS.
+
 ---
 
 ## Pipeline Assembly
@@ -230,8 +253,9 @@ When combining multiple steps, use native pipeline patterns rather than chaining
 - **Full scoring pipeline in one query:** wrap `TD_ColumnTransformer` in a CTE, feed into a Predict function — no temp tables needed
 - **Choosing K for clustering:** use the elbow method UNION ALL pattern, not manual iteration (see `ml-patterns`)
 - **Class imbalance:** split first, then `TD_SMOTE` on train set only (see `ml-patterns`)
+- **UAF multi-step pipelines:** chain ARTs — each function writes to a named ART, the next function reads it via `ART_SPEC(TABLE_NAME(...))`. The canonical pattern is estimate → validate → forecast. See `uaf-concepts` for the full chaining example.
 
-See the `ml-patterns` topic for complete end-to-end pipeline examples.
+See the `ml-patterns` topic for complete end-to-end ML pipeline examples. See `uaf-concepts` for UAF pipeline patterns.
 
 ---
 
