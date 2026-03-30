@@ -56,6 +56,7 @@ Use `get_syntax_help(topic="<name>")` to load any topic below.
 | `uaf-forecasting` | UAF series forecasting: TD_ARIMAFORECAST, TD_HOLT_WINTERS_FORECASTER, TD_MAMEAN, TD_SIMPLEEXP, TD_DTW |
 | `uaf-diagnostics` | UAF diagnostic statistical tests: TD_DICKEY_FULLER, TD_DURBIN_WATSON, TD_BREUSCH_GODFREY, TD_BREUSCH_PAGAN_GODFREY, TD_WHITES_GENERAL, TD_GOLDFELD_QUANDT, TD_PORTMAN, TD_FITMETRICS, TD_SELECTION_CRITERIA, TD_CUMUL_PERIODOGRAM, TD_SIGNIF_PERIODICITIES, TD_SIGNIF_RESIDMEAN |
 | `uaf-dsp` | UAF digital signal processing and spatial: TD_DFFT/DFFT2, TD_IDFFT/IDFFT2, TD_DFFTCONV/DFFT2CONV, TD_CONVOLVE/CONVOLVE2, TD_DWT/DWT2D, TD_IDWT/IDWT2D, TD_POWERSPEC, TD_LINESPEC, TD_GENSERIES4SINUSOIDS, TD_SAX, TD_WINDOWDFFT |
+| `uaf-formula-rules` | UAF formula syntax: operators, precedence, math and trigonometric functions, variable naming conventions for FORMULA(...) parameters |
 
 ## Reference
 | Topic | Description |
