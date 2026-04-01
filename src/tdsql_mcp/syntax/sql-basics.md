@@ -125,6 +125,38 @@ CREATE TABLE db.my_table AS (
 -- Semicolons: required in BTEQ; optional in most client tools
 ```
 
+## Reserved Words as Column Names in Table Operator Clauses
+
+When a column name is a Teradata reserved word (e.g. `type`, `date`, `time`, `value`, `name`, `format`, `title`), it must be double-quoted. In regular SQL projections this looks normal:
+
+```sql
+SELECT "type", "date" FROM db.my_table;
+```
+
+In table operator string arguments (`ACCUMULATE`, `IDColumn`, `TargetColumns`, `Accumulate`, etc.), the double-quotes must be embedded **inside** the single-quoted string:
+
+```sql
+-- WRONG: 'type' is a reserved word — Teradata will reject or misparse this
+USING IDColumn('id') Accumulate('type', 'value')
+
+-- RIGHT: double-quote reserved words inside the string literal
+USING IDColumn('id') Accumulate('"type"', '"value"')
+```
+
+This applies to **any** table operator clause that takes column names as string arguments:
+
+```sql
+-- All of these follow the same rule
+IDColumn('"type"')
+TargetColumns('"value"', '"date"', 'non_reserved_col')
+Accumulate('"type"', 'amount', '"date"')
+ResponseColumn('"value"')
+```
+
+**When in doubt, quote it.** Double-quoting a non-reserved word in a string argument is harmless; leaving a reserved word unquoted will cause a parse error.
+
+Common Teradata reserved words that appear as column names: `type`, `date`, `time`, `timestamp`, `value`, `name`, `format`, `title`, `level`, `mode`, `status`, `class`, `key`, `index`, `year`, `month`, `day`, `hour`, `minute`, `second`.
+
 ## Teradata Operator Differences
 
 | Operation | Wrong (MySQL/PostgreSQL) | Correct (Teradata) |
