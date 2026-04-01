@@ -83,3 +83,44 @@ WHERE cnt > 5;
 SELECT * FROM db.orders o
 WHERE amount > (SELECT AVG(amount) FROM db.orders WHERE region = o.region);
 ```
+
+## DDL — Teradata Syntax (Common Gotchas)
+
+Teradata DDL differs from PostgreSQL/MySQL in several ways. Do not use `CREATE OR REPLACE` — it is not valid Teradata syntax.
+
+### Views
+```sql
+-- WRONG (PostgreSQL/MySQL syntax — does not work in Teradata)
+CREATE OR REPLACE VIEW db.my_view AS SELECT ...;
+
+-- RIGHT: REPLACE VIEW creates or replaces in one statement
+REPLACE VIEW db.my_view AS
+SELECT col1, col2 FROM db.my_table WHERE condition;
+
+-- Create only (fails if view already exists)
+CREATE VIEW db.my_view AS SELECT ...;
+```
+
+### Tables
+```sql
+-- Create a new table
+CREATE TABLE db.my_table (
+    id       INTEGER NOT NULL,
+    name     VARCHAR(100),
+    created  TIMESTAMP(0) DEFAULT CURRENT_TIMESTAMP(0)
+) PRIMARY INDEX (id);
+
+-- Create table from a SELECT (CTAS)
+CREATE TABLE db.my_table AS (
+    SELECT * FROM db.source_table WHERE condition
+) WITH DATA;                     -- WITH DATA copies rows; WITH NO DATA copies schema only
+
+-- CREATE OR REPLACE TABLE does not exist — to replace: DROP then CREATE, or use a staging pattern
+```
+
+### Other DDL reminders
+```sql
+-- Teradata uses MINUS, not EXCEPT (already noted in Set Operations above)
+-- String concatenation: use || (ANSI) or CONCAT() — not +
+-- Semicolons: required in BTEQ; optional in most client tools
+```
