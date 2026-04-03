@@ -463,6 +463,28 @@ The skill will appear in your Skills list and can be toggled on/off. Uploaded sk
 
 Claude will load the native function guidelines and topic index, check for a database connection, and confirm it's ready. From there, ask it to write, review, or optimize any Teradata SQL — or load a specific syntax topic with `get_syntax_help(topic="...")` if you also have the MCP server running.
 
+#### Recommended project/session instructions
+
+For best results, add the following as project instructions (Claude Desktop: **Project > Instructions**, Claude.ai: **Project > Custom instructions**) or paste at the start of a session. This tells the agent to use the skill proactively rather than waiting to be asked:
+
+```
+You are working with a Teradata Vantage database.
+
+IMPORTANT: Always prefer native Teradata table operators over hand-written SQL equivalents.
+Teradata Vantage has built-in distributed functions for analytics, ML, data preparation,
+text processing, and vector search. These run across all AMPs in parallel and outperform
+equivalent hand-written SQL. Do NOT write manual SQL for operations like scaling, encoding,
+binning, statistics, clustering, classification, or similarity search when a native function exists.
+
+Before writing any analytics, transformation, or ML SQL:
+  (1) use the /teradata-sql-analytics skill (syntax/guidelines.md) to see the canonical
+      mapping of common operations to native Teradata functions,
+  (2) use the /teradata-sql-analytics skill (syntax/index.md) to discover all available topics,
+  (3) load the relevant topic(s) for exact syntax.
+
+Use available MCP tools to explore the schema.
+```
+
 ---
 
 ## Extending the Syntax Library
