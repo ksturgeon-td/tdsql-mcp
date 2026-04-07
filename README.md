@@ -407,11 +407,10 @@ The skill loads the native function guidelines and full syntax topic index into 
 git clone https://github.com/ksturgeon-td/tdsql-mcp.git
 cd tdsql-mcp
 
-# Install the skill — symlink keeps the syntax library current as the repo updates
-REPO_DIR="$(pwd)"
+# Install the skill — copies SKILL.md and creates a symlink to the syntax library
 mkdir -p ~/.claude/teradata-sql-analytics
 cp skills/teradata-sql-analytics/SKILL.md ~/.claude/teradata-sql-analytics/SKILL.md
-ln -sf "$REPO_DIR/src/tdsql_mcp/syntax" ~/.claude/teradata-sql-analytics/syntax
+ln -sf "$(pwd)/src/tdsql_mcp/syntax" ~/.claude/teradata-sql-analytics/syntax
 ```
 
 To get syntax library updates later, just `git pull` in the repo directory — the symlink means your installed skill picks up changes automatically.

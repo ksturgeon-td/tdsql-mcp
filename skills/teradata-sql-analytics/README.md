@@ -15,11 +15,10 @@ When combined with a Teradata MCP server (e.g. `tdsql-mcp`), the skill handles n
 git clone https://github.com/ksturgeon-td/tdsql-mcp.git
 cd tdsql-mcp
 
-# Install — symlink keeps syntax files current as the repo updates
-REPO_DIR="$(pwd)"
+# Install — copies SKILL.md and creates a relative symlink to the syntax library
 mkdir -p ~/.claude/teradata-sql-analytics
 cp skills/teradata-sql-analytics/SKILL.md ~/.claude/teradata-sql-analytics/SKILL.md
-ln -sf "$REPO_DIR/src/tdsql_mcp/syntax" ~/.claude/teradata-sql-analytics/syntax
+ln -sf "$(pwd)/src/tdsql_mcp/syntax" ~/.claude/teradata-sql-analytics/syntax
 ```
 
 To update the syntax library later: `git pull` in the repo directory. The symlink picks up changes automatically.
