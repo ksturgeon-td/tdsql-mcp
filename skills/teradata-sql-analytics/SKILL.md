@@ -1,6 +1,6 @@
 ---
 name: teradata-sql-analytics
-description: Load at the start of any Teradata Vantage analytics session. Injects native function guidelines and the full syntax topic index.
+description: Load at the start of any Teradata analytics session. Injects native function guidelines and syntax.
 ---
 
 You are working with a Teradata Vantage database.
