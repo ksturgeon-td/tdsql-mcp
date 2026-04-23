@@ -461,6 +461,11 @@ def main() -> None:
     if args.transport == "streamable-http":
         mcp.settings.host = args.host
         mcp.settings.port = args.port
+        # FastMCP sets DNS-rebinding protection based on the constructor's host
+        # default (127.0.0.1). When binding to a non-localhost address, clear it
+        # so clients connecting via hostname are not rejected.
+        if args.host not in ("127.0.0.1", "localhost", "::1"):
+            mcp.settings.transport_security = None
         print(
             f"tdsql-mcp started ({mode}) — connected to {_conn_params['host']}"
             f" — listening on http://{args.host}:{args.port}/mcp",
