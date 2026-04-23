@@ -118,6 +118,21 @@ CREATE TABLE db.my_table AS (
 -- CREATE OR REPLACE TABLE does not exist — to replace: DROP then CREATE, or use a staging pattern
 ```
 
+### CREATE USER — DEFAULT CHARACTER SET
+
+```sql
+-- WRONG: CHARACTER SET is not valid at the user level
+CREATE USER myuser AS PASSWORD = 'secret' CHARACTER SET UNICODE;
+
+-- RIGHT: the clause is DEFAULT CHARACTER SET
+CREATE USER myuser AS
+    PASSWORD = 'secret'
+    DEFAULT DATABASE = mydb
+    DEFAULT CHARACTER SET UNICODE;
+```
+
+> **`DEFAULT CHARACTER SET`**, not `CHARACTER SET`, is the correct syntax in `CREATE USER` and `MODIFY USER`. Using `CHARACTER SET` alone will fail.
+
 ### Other DDL reminders
 ```sql
 -- Teradata uses MINUS, not EXCEPT (already noted in Set Operations above)
