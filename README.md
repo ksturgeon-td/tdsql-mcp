@@ -200,6 +200,9 @@ teradata://user:password@host[:port][/database][?param=value&...]
 |---------|----------|-------------|
 | `DATABASE_URI` | `--uri` | Teradata connection URI |
 | `TD_READ_ONLY` | `--read-only` | Set to `true` to disable write operations |
+| — | `--transport` | `stdio` (default) or `streamable-http` |
+| — | `--host` | Bind host for HTTP transport (default: `127.0.0.1`) |
+| — | `--port` | Bind port for HTTP transport (default: `8000`) |
 
 ### Common extra parameters
 
@@ -352,6 +355,35 @@ tdsql-mcp --uri "teradata://me:secret@myhost/mydb?logmech=LDAP&sslmode=VERIFY-FU
 # Read-only
 tdsql-mcp --uri "teradata://me:secret@myhost/mydb" --read-only
 ```
+
+#### Streamable-HTTP transport
+
+The server also supports `streamable-http` transport for remote or multi-client use — e.g. a shared server on a team machine, or an agent framework that connects over HTTP rather than spawning a subprocess.
+
+```bash
+# Start in HTTP mode (binds to localhost:8000 by default)
+tdsql-mcp --uri "teradata://me:secret@myhost/mydb" --transport streamable-http
+
+# Custom host/port
+tdsql-mcp --uri "teradata://me:secret@myhost/mydb" --transport streamable-http --host 0.0.0.0 --port 8080
+```
+
+The MCP endpoint is available at `http://<host>:<port>/mcp`.
+
+To connect Claude Code to an HTTP transport server, add it to `.claude/settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "teradata": {
+      "type": "http",
+      "url": "http://localhost:8000/mcp"
+    }
+  }
+}
+```
+
+> **Note:** The HTTP transport has no built-in authentication. For anything beyond localhost, put the server behind a reverse proxy with appropriate access controls.
 
 #### Install from source (with virtual environment)
 

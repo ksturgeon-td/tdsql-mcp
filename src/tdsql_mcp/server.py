@@ -417,6 +417,23 @@ def main() -> None:
         metavar="URI",
         help="Teradata connection URI (overrides DATABASE_URI env var)",
     )
+    parser.add_argument(
+        "--transport",
+        choices=["stdio", "streamable-http"],
+        default="stdio",
+        help="Transport protocol (default: stdio)",
+    )
+    parser.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="Bind host for streamable-http transport (default: 127.0.0.1)",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=8000,
+        help="Bind port for streamable-http transport (default: 8000)",
+    )
     args = parser.parse_args()
 
     _read_only = args.read_only or os.getenv("TD_READ_ONLY", "").lower() in ("1", "true", "yes")
@@ -441,9 +458,16 @@ def main() -> None:
         raise SystemExit(f"Failed to connect to Teradata at {_conn_params.get('host')!r}: {exc}") from exc
 
     mode = "read-only" if _read_only else "read-write"
-    print(f"tdsql-mcp started ({mode}) — connected to {_conn_params['host']}", file=sys.stderr, flush=True)
-
-    mcp.run()
+    if args.transport == "streamable-http":
+        print(
+            f"tdsql-mcp started ({mode}) — connected to {_conn_params['host']}"
+            f" — listening on http://{args.host}:{args.port}/mcp",
+            file=sys.stderr, flush=True,
+        )
+        mcp.run(transport="streamable-http", host=args.host, port=args.port)
+    else:
+        print(f"tdsql-mcp started ({mode}) — connected to {_conn_params['host']}", file=sys.stderr, flush=True)
+        mcp.run(transport="stdio")
 
 
 if __name__ == "__main__":
