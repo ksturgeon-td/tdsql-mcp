@@ -459,12 +459,14 @@ def main() -> None:
 
     mode = "read-only" if _read_only else "read-write"
     if args.transport == "streamable-http":
+        mcp.settings.host = args.host
+        mcp.settings.port = args.port
         print(
             f"tdsql-mcp started ({mode}) — connected to {_conn_params['host']}"
             f" — listening on http://{args.host}:{args.port}/mcp",
             file=sys.stderr, flush=True,
         )
-        mcp.run(transport="streamable-http", host=args.host, port=args.port)
+        mcp.run(transport="streamable-http")
     else:
         print(f"tdsql-mcp started ({mode}) — connected to {_conn_params['host']}", file=sys.stderr, flush=True)
         mcp.run(transport="stdio")
