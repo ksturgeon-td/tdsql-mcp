@@ -10,6 +10,8 @@ Teradata Vantage includes hundreds of built-in table operators for ML, statistic
 
 This server solves that with a structured syntax reference library and an agent guidance architecture that directs models toward native functions at every decision point.
 
+> **How does it work?** See [docs/architecture.md](docs/architecture.md) for a full explanation of the MCP server, Skill, and combined architectures — including diagrams of all three modes.
+
 ---
 
 ## Why This Matters
