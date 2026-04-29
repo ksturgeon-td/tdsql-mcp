@@ -209,6 +209,8 @@ Native functions distribute across all AMPs. The result set returned to the agen
 
 **Vector dimension introspection:** Use `embedding.LENGTH()` to get the number of dimensions from a VECTOR column — never infer from UDT byte size. `SELECT embedding.LENGTH() AS dims FROM db.table SAMPLE 1;`
 
+**Finding the embedding model for an existing corpus:** Query `TD_SYSAI.TD_CollectionsV` or `TD_SYSAI.TD_VectorStores` to discover the model name, provider, and embedding size used to build a corpus. The query pipeline must use the exact same model — mismatched embeddings produce meaningless scores. See `vector-search` topic, "Discovering Existing Vector Stores" section.
+
 ### Statistical Testing
 
 | Instead of this | Use this (native function) | Topic |

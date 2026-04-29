@@ -8,6 +8,31 @@ Functions for computing vector distances and building approximate nearest-neighb
 
 ---
 
+## Discovering Existing Vector Stores and Embedding Models
+
+Before building a query pipeline or embedding new text, check what vector stores already exist and what model was used to build them. The model used at corpus build time **must** match the model used at query time — mismatched embeddings produce meaningless similarity scores.
+
+```sql
+-- List all vector stores and their embedding model metadata
+SELECT *
+FROM TD_SYSAI.TD_VectorStores
+ORDER BY StoreName;
+
+-- Collections view — includes model name, provider, and embedding configuration
+SELECT *
+FROM TD_SYSAI.TD_CollectionsV
+ORDER BY CollectionName;
+
+-- Filter to a specific store or collection
+SELECT CollectionName, ModelName, APIType, EmbeddingSize
+FROM TD_SYSAI.TD_CollectionsV
+WHERE CollectionName = '<your_collection>';
+```
+
+> **Always check these views before writing a vector search query.** The `modelname`, `apitype`, and `EmbeddingSize` values from `TD_CollectionsV` are the values to use in `AI_TEXTEMBEDDINGS` and `TD_VectorNormalize` — do not guess or hardcode them.
+
+---
+
 ## TD_VectorDistance
 
 Computes pairwise distances between vectors in a target table and vectors in a reference table. Supports three distance measures, optional TopK filtering, and both individual float columns and `VECTOR`/`Vector32`/`VARBYTE` column types.
@@ -624,6 +649,7 @@ CREATE TABLE <db>.<corpus_embeddings_table> AS (
 
 ### Checklist
 
+- [ ] Query `TD_SYSAI.TD_CollectionsV` or `TD_SYSAI.TD_VectorStores` to find the model, provider, and EmbeddingSize used to build the corpus — do not guess
 - [ ] Corpus embeddings table built with same model, provider, and `EmbeddingSize` as query
 - [ ] Both corpus and query normalized with `TD_VectorNormalize(Approach('UNITVECTOR'))`
 - [ ] `TD_BYONE()` + `PARTITION BY p` used in the query pipeline for the single input row
