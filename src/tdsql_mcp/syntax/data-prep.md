@@ -329,6 +329,8 @@ FROM db.campaign;
 
 Generates synthetic minority-class samples to address class imbalance in training data. Supports four oversampling strategies: standard SMOTE, ADASYN, Borderline-SMOTE, and SMOTE-NC (for mixed numeric + categorical features).
 
+> **Required:** The `ON` clause must be written as `ON ... AS InputTable PARTITION BY ANY`. Both `AS InputTable` and `PARTITION BY ANY` are required — omitting either will cause an error.
+
 > **Output contains synthetic samples only** — `UNION ALL` with the original training table to produce the full augmented dataset before training.
 
 ```sql
@@ -357,7 +359,7 @@ SELECT * FROM TD_SMOTE(
 SELECT * FROM db.training_table
 UNION ALL
 SELECT * FROM TD_SMOTE(
-    ON db.training_table PARTITION BY ANY
+    ON db.training_table AS InputTable PARTITION BY ANY
     USING
         IDColumn('id')
         ResponseColumn('label')
@@ -407,7 +409,7 @@ SELECT StatValue AS MedianValue FROM TD_UnivariateStatistics(
 
 -- Step 3: run TD_SMOTE with smotenc
 SELECT * FROM TD_SMOTE(
-    ON db.training_table PARTITION BY ANY
+    ON db.training_table AS InputTable PARTITION BY ANY
     ON db.smote_encodings AS EncodingsTable DIMENSION
     USING
         IDColumn('id')
