@@ -81,6 +81,137 @@ GROUP BY Hashamp()
 ORDER BY row_count DESC;
 ```
 
+## Hash Functions — PI Distribution Analysis
+
+Four functions that work together to analyze how rows are distributed across AMPs. Use them to evaluate primary index choices, detect skew, identify hash collisions, and understand where specific rows live.
+
+### Quick Reference
+
+| Function | Syntax | Returns | No-arg behavior |
+|----------|--------|---------|-----------------|
+| `HASHROW` | `HASHROW(col1 [, col2, ...])` | `BYTE(4)` row hash | Max hash value (`'FFFFFFFF'XB`) |
+| `HASHBUCKET` | `HASHBUCKET(hashrow_value)` | `INTEGER` bucket number | Highest hash bucket number |
+| `HASHAMP` | `HASHAMP([bucket_number])` | `INTEGER` primary AMP ID | One less than max AMP count |
+| `HASHBAKAMP` | `HASHBAKAMP([bucket_number])` | `INTEGER` fallback AMP ID | One less than max fallback AMP count |
+
+**Standard chaining pattern:**
+```sql
+HASHAMP(HASHBUCKET(HASHROW(col1, col2)))  -- → primary AMP ID for a row
+```
+
+> `HASHROW` hashes the column values → `HASHBUCKET` maps the hash to a bucket → `HASHAMP` maps the bucket to an AMP.
+
+---
+
+### AMP Skew Detection
+
+Check whether rows are distributed evenly across AMPs. Significant skew means some AMPs are doing much more work than others.
+
+```sql
+-- Row count per AMP — large variance = skew problem
+SELECT HASHAMP(HASHBUCKET(HASHROW(pi_col1, pi_col2))) AS amp_id,
+       COUNT(*) AS row_count
+FROM db.my_table
+GROUP BY 1
+ORDER BY row_count DESC;
+
+-- Summary stats: min/max/avg rows per AMP
+SELECT MIN(row_count)  AS min_rows,
+       MAX(row_count)  AS max_rows,
+       AVG(row_count)  AS avg_rows,
+       MAX(row_count) - MIN(row_count) AS spread
+FROM (
+    SELECT HASHAMP(HASHBUCKET(HASHROW(pi_col1, pi_col2))) AS amp_id,
+           COUNT(*) AS row_count
+    FROM db.my_table
+    GROUP BY 1
+) t;
+```
+
+---
+
+### PI Candidate Evaluation
+
+Before changing a primary index, compare the hash distribution of the candidate column set against the current PI. More distinct hash buckets = less skew potential.
+
+```sql
+-- Count distinct hash buckets for current PI vs candidate PI
+-- Higher distinct count = better distribution
+SELECT
+    COUNT(DISTINCT HASHROW(current_pi_col))   AS current_pi_buckets,
+    COUNT(DISTINCT HASHROW(candidate_col1, candidate_col2)) AS candidate_pi_buckets,
+    COUNT(*)                                   AS total_rows
+FROM db.my_table;
+```
+
+```sql
+-- Full bucket distribution for a candidate PI
+SELECT HASHBUCKET(HASHROW(candidate_col1, candidate_col2)) AS bucket,
+       COUNT(*) AS row_count
+FROM db.my_table
+GROUP BY 1
+ORDER BY row_count DESC;
+-- Ideally: many buckets, similar row counts; flag any bucket with >> avg rows
+```
+
+---
+
+### Hash Synonym (Collision) Detection
+
+Hash synonyms are rows that share the same row hash despite having different key values — they land on the same AMP and can cause skew even with a high-cardinality PI.
+
+```sql
+-- Average rows per hash value — close to 1.0 = minimal synonyms
+SELECT COUNT(*) * 1.0 / COUNT(DISTINCT HASHROW(col1, col2)) AS avg_rows_per_hash
+FROM db.my_table;
+
+-- Synonyms per hash bucket — buckets with count >> 1 are collision hotspots
+SELECT HASHBUCKET(HASHROW(col1, col2)) AS bucket,
+       COUNT(DISTINCT col1 || CAST(col2 AS VARCHAR(50))) AS distinct_keys,
+       COUNT(*) AS row_count
+FROM db.my_table
+GROUP BY 1
+HAVING COUNT(*) > 1
+ORDER BY row_count DESC;
+```
+
+---
+
+### Identifying Which AMP Holds a Row
+
+Useful for debugging distribution issues or verifying a specific row's location.
+
+```sql
+-- Primary AMP for specific column values
+SELECT HASHAMP(HASHBUCKET(HASHROW(col1, col2))) AS primary_amp
+FROM db.my_table
+WHERE col1 = 'some_value';
+
+-- Fallback AMP (only meaningful when fallback is enabled on the table)
+SELECT HASHBAKAMP(HASHBUCKET(HASHROW(col1, col2))) AS fallback_amp
+FROM db.my_table
+WHERE col1 = 'some_value';
+
+-- Both primary and fallback AMPs side by side
+SELECT col1,
+       HASHAMP(HASHBUCKET(HASHROW(col1, col2)))    AS primary_amp,
+       HASHBAKAMP(HASHBUCKET(HASHROW(col1, col2))) AS fallback_amp
+FROM db.my_table
+SAMPLE 10;
+```
+
+---
+
+### Notes
+
+- `HASHROW` returns `'00000000'XB` (bucket 0) when all input expressions are NULL — do not use a nullable column set as a PI candidate
+- `HASHBAKAMP` is only meaningful when the table has fallback enabled; on non-fallback tables the result is undefined
+- `HASHAMP()` (no args) returns one less than the total AMP count — add 1 to get the system AMP count: `HASHAMP() + 1`
+- `HASHBUCKET()` (no args) returns the highest valid bucket number; `HASHBUCKET() + 1` = total bucket count
+- Map-aware syntax (`MAP = mapname`, `COLOCATE USING colname`) is available for both `HASHAMP` and `HASHBAKAMP` when working with non-default or sparse AMP maps
+
+---
+
 ## NoPI Tables (Staging / Load)
 ```sql
 CREATE MULTISET TABLE db.staging_table, NO PRIMARY INDEX AS

@@ -316,7 +316,7 @@ For any non-trivial query, run `explain_query` before executing. Read the plan a
 - `duplicated on all AMPs` on a small table — correct broadcast strategy
 - `execute the following steps in parallel` — independent steps dispatched concurrently
 
-For full EXPLAIN interpretation guidance, optimization playbook, and stats collection patterns: `get_syntax_help(topic="query-tuning")`.
+For full EXPLAIN interpretation guidance, optimization playbook, stats collection patterns, and hash function reference (HASHROW/HASHBUCKET/HASHAMP/HASHBAKAMP for PI skew analysis): `get_syntax_help(topic="query-tuning")`.
 
 ---
 
