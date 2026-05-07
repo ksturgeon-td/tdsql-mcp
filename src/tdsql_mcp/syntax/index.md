@@ -23,6 +23,7 @@ Use `get_syntax_help(topic="<name>")` to load any topic below.
 |-------|-------------|
 | `string-functions` | Character manipulation: SUBSTR, INDEX, OREPLACE, TRIM, etc. |
 | `numeric-functions` | Math and numeric functions: ROUND, MOD, LOG, ABS, etc. |
+| `bit-byte-functions` | Bit/byte manipulation: BITAND, BITOR, BITXOR, BITNOT, SHIFTLEFT/RIGHT, ROTATELEFT/RIGHT, GETBIT, SETBIT, COUNTSET, SUBBITSTR, TO_BYTE |
 | `date-time` | Date/time literals, arithmetic, formatting, EXTRACT |
 | `aggregate-functions` | GROUP BY, COUNT, SUM, AVG, percentiles, GROUPING SETS |
 | `window-functions` | ROW_NUMBER, RANK, LAG/LEAD, running totals, QUALIFY |

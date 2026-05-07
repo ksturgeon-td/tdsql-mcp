@@ -329,6 +329,7 @@ Native functions do not cover everything. Use hand-written SQL for:
 - CASE expressions and NULL handling (`conditional`)
 - Window functions for lag/lead features, running totals (`window-functions`)
 - Schema discovery queries against DBC.* views (`catalog-views`)
+- Bit/byte manipulation — `BITAND`, `BITOR`, `BITXOR`, `BITNOT`, `SHIFTLEFT`/`SHIFTRIGHT`, `ROTATELEFT`/`ROTATERIGHT`, `GETBIT`, `SETBIT`, `COUNTSET`, `SUBBITSTR`, `TO_BYTE` — all Teradata-specific functions, **no ANSI equivalents**; do not use `&`, `|`, `^`, `~` operators (`bit-byte-functions`)
 - One-off computations not covered by any native function
 
 If you are unsure whether a native function exists for an operation, call `get_syntax_help(topic='index')` and check.
