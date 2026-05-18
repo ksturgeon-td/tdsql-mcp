@@ -353,7 +353,7 @@ Native functions do not cover everything. Use hand-written SQL for:
 - Date/time arithmetic (`date-time`)
 - CASE expressions and NULL handling (`conditional`)
 - Window functions for lag/lead features, running totals (`window-functions`)
-- Schema discovery queries against DBC.* views (`catalog-views`)
+- Schema discovery via MCP tools first — `list_databases`, `list_tables`, `describe_table` cover the common cases; fall back to manual DBC.* queries only for capabilities not covered by those tools (`catalog-views`)
 - Bit/byte manipulation — `BITAND`, `BITOR`, `BITXOR`, `BITNOT`, `SHIFTLEFT`/`SHIFTRIGHT`, `ROTATELEFT`/`ROTATERIGHT`, `GETBIT`, `SETBIT`, `COUNTSET`, `SUBBITSTR`, `TO_BYTE` — all Teradata-specific functions, **no ANSI equivalents**; do not use `&`, `|`, `^`, `~` operators (`bit-byte-functions`)
 - JSON data — native `JSON` type with BSON/UBJSON binary formats; JSONPath extraction; shredding (JSON→relational) and publishing (relational→JSON) — all in-database (`json-functions`)
 - One-off computations not covered by any native function

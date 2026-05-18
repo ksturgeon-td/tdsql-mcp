@@ -98,14 +98,30 @@ WHERE DatabaseName = 'mydb' AND TableName = 'mytable'
 ORDER BY ColumnName;
 ```
 
-## Access Rights
+## Listing Accessible Databases
+
+Prefer the `list_databases` MCP tool — it calls `DBC.DatabasesV` which already filters to databases visible to the current session.
+
+`DBC.DatabasesV` answers "what databases exist and are visible to me?"  
+`DBC.AllRightsV` answers "what databases do I have explicit rights on?" (includes role-inherited grants)
+
+Use `DBC.AllRightsV` when you need to know what rights a specific user holds:
+
 ```sql
--- What access does the current user have on a database?
+-- Databases a user has rights on (includes role-inherited grants)
+SELECT DISTINCT DatabaseName
+FROM DBC.AllRightsV
+WHERE UserName = 'some_user'
+ORDER BY DatabaseName;
+
+-- Full rights detail for a user
 SELECT AccessRight, DatabaseName, TableName
-FROM DBC.UserRightsV
-WHERE UserName = USER
+FROM DBC.AllRightsV
+WHERE UserName = 'some_user'
 ORDER BY DatabaseName, TableName;
 ```
+
+> **Do not use `DBC.UserRightsV` for database enumeration** — it shows only directly granted rights and misses role-inherited access. Use `DBC.AllRightsV` for a complete picture.
 
 ## Common Lookup Patterns
 ```sql
