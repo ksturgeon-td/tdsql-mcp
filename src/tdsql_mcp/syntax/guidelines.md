@@ -211,6 +211,31 @@ Native functions distribute across all AMPs. The result set returned to the agen
 
 **Finding the embedding model for an existing corpus:** Query `TD_SYSAI.TD_CollectionsV` or `TD_SYSAI.TD_VectorStores` to discover the model name, provider, and embedding size used to build a corpus. The query pipeline must use the exact same model — mismatched embeddings produce meaningless scores. See `vector-search` topic, "Discovering Existing Vector Stores" section.
 
+### JSON Data
+
+| Operation | Use this | Topic |
+|-----------|---------|-------|
+| Store JSON in a column | Native `JSON` type — `JSON(n)`, `STORAGE FORMAT BSON\|UBJSON` | `json-functions` |
+| Extract a scalar value from JSON | `JSONExtractValue('$.path')` or dot notation `j.field` | `json-functions` |
+| Extract multiple values / array | `JSONExtract('$..field')` → JSON array | `json-functions` |
+| Type-safe extraction (returns NULL on failure) | `JSONGETVALUE(j, '$.age' AS INTEGER)` | `json-functions` |
+| Check if a JSON path exists | `j.ExistValue('$.path')` → 1/0 | `json-functions` |
+| List all key paths in a document | `JSON_KEYS(ON (...) USING QUOTES('N'))` | `json-functions` |
+| Validate JSON string before loading | `JSON_CHECK('...')` → 'OK' or 'INVALID: reason' | `json-functions` |
+| Validate BSON binary before loading | `BSON_CHECK(bytes_col)` → 'OK' or 'INVALID: reason' | `json-functions` |
+| Convert binary JSON to text | `j.AsJSONText()` | `json-functions` |
+| Convert JSON to BSON | `j.AsBSON()` or `CAST(j AS JSON STORAGE FORMAT BSON)` | `json-functions` |
+| Estimate storage size | `j.StorageSize('BSON')` | `json-functions` |
+| SQL rows → JSON doc (simple) | `SELECT AS JSON col1, col2 FROM t` | `json-functions` |
+| SQL rows → JSON doc (hierarchical) | `JSON_COMPOSE(col, JSON_AGG(...) AS nested)` | `json-functions` |
+| SQL rows → JSON doc (any format, >64K) | `JSON_PUBLISH` table operator | `json-functions` |
+| JSON → relational rows (JSONPath) | `JSON_TABLE(ON (...) USING ROWEXPR(...) COLEXPR(...))` | `json-functions` |
+| JSON → relational rows (fast, CLOB) | `TD_JSONSHRED(ON (...) USING ROWEXPR(...) COLEXPR(...) RETURNTYPES(...))` | `json-functions` |
+| JSON → existing relational tables | `CALL SYSLIB.JSON_SHRED_BATCH(...)` | `json-functions` |
+| NVP string → JSON | `NVP2JSON('k=v&k2=v2')` | `json-functions` |
+| Vantage ARRAY → JSON | `ARRAY_TO_JSON(arr_col)` | `json-functions` |
+| ST_Geometry ↔ GeoJSON | `GeoJSONFromGeom(geom)` / `GeomFromGeoJSON(json, srid)` | `json-functions` |
+
 ### Statistical Testing
 
 | Instead of this | Use this (native function) | Topic |
@@ -330,6 +355,7 @@ Native functions do not cover everything. Use hand-written SQL for:
 - Window functions for lag/lead features, running totals (`window-functions`)
 - Schema discovery queries against DBC.* views (`catalog-views`)
 - Bit/byte manipulation — `BITAND`, `BITOR`, `BITXOR`, `BITNOT`, `SHIFTLEFT`/`SHIFTRIGHT`, `ROTATELEFT`/`ROTATERIGHT`, `GETBIT`, `SETBIT`, `COUNTSET`, `SUBBITSTR`, `TO_BYTE` — all Teradata-specific functions, **no ANSI equivalents**; do not use `&`, `|`, `^`, `~` operators (`bit-byte-functions`)
+- JSON data — native `JSON` type with BSON/UBJSON binary formats; JSONPath extraction; shredding (JSON→relational) and publishing (relational→JSON) — all in-database (`json-functions`)
 - One-off computations not covered by any native function
 
 If you are unsure whether a native function exists for an operation, call `get_syntax_help(topic='index')` and check.
