@@ -81,6 +81,18 @@ def _require_write() -> None:
         raise PermissionError("Server is running in read-only mode; write operations are disabled.")
 
 
+def _maybe_parse_json(value: Any) -> Any:
+    """If a value is a string that looks like a JSON object or array, parse it."""
+    if isinstance(value, str):
+        s = value.strip()
+        if s and s[0] in ('{', '['):
+            try:
+                return json.loads(s)
+            except Exception:
+                pass
+    return value
+
+
 def _execute_query_internal(sql: str, params: list | None = None) -> list[dict]:
     with _conn_lock:
         conn = _reconnect_if_needed()
@@ -120,7 +132,10 @@ def execute_query(sql: str, max_rows: int = 100) -> str:
                 return json.dumps({"rows": [], "row_count": 0, "truncated": False})
             columns = [desc[0] for desc in cur.description]
             rows = cur.fetchmany(max_rows)
-            result = [dict(zip(columns, row)) for row in rows]
+            result = [
+                dict(zip(columns, (_maybe_parse_json(v) for v in row)))
+                for row in rows
+            ]
             # Peek to detect truncation without fetching everything
             truncated = cur.fetchone() is not None
             return json.dumps(
