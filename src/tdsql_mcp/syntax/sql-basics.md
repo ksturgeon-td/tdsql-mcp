@@ -177,6 +177,9 @@ The ANSI SQL reserved words are well-known. The words below are **Teradata-only*
 | `JOURNAL` | financial journals, transaction audit logs | V2R3 |
 | `CLUSTER` | cluster_id, partition or segment label | V2R3 |
 | `NAMED` | TD column alias syntax (`expr (NAMED alias)`) — risky as a column name | V2R3 |
+| `RANK` | search rank, priority rank, competition rank | V2R3 |
+| `DATABASE` | database name columns in catalog/metadata tables | V2R3 |
+| `PERCENT` | percent_change, completion_percent, analytics columns | V2R3 |
 | `ENABLED` / `DISABLED` | feature flag columns, configuration status | V2R3 |
 | `CLASS` | object class, classification, CSS class | V2R5 |
 | `PROFILE` | user profiles, configuration profiles | V2R5 |
@@ -199,7 +202,9 @@ The ANSI SQL reserved words are well-known. The words below are **Teradata-only*
 | `MACRO` | Stored parameterized query: `CREATE MACRO ...` |
 | `COLLECT` | Statistics collection: `COLLECT STATISTICS ON db.t COLUMN (col)` |
 | `BT` / `ET` | Begin Transaction / End Transaction |
-| `SEL` | Teradata shorthand for `SELECT` |
+| `SEL` | Shorthand for `SELECT` |
+| `DEL` / `INS` / `UPD` | Shorthands for DELETE / INSERT / UPDATE — `DEL` and `INS` can appear as column aliases in CDC/audit schemas |
+| `CM` / `CT` / `CD` / `CS` / `CV` / `SS` / `UC` | Additional 2-letter Teradata BTEQ abbreviations — all reserved |
 
 ### Reserved Words in Table Operator String Arguments
 
