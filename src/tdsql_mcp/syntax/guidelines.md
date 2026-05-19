@@ -195,6 +195,31 @@ Native functions distribute across all AMPs. The result set returned to the agen
 | External TF-IDF | `TD_TFIDF` | `text-analytics` |
 | External word embeddings | `TD_WordEmbeddings` | `text-analytics` |
 
+### LLM-Powered Text Analytics (AI_* Functions)
+
+> **Prerequisites:** Requires an authorization object and LLM provider configuration before use. See `authorization-objects` and `llm-providers` topics. All functions use `TD_SYSFNLIB.<FunctionName>(ON ...)` — do **not** add a `PARTITION BY` clause.
+
+| Instead of this | Use this (native function) | Topic |
+|-----------------|---------------------------|-------|
+| External/post-hoc sentiment scoring | `AI_AnalyzeSentiment` | `ai-text-analytics` |
+| Per-row LLM API calls with question + context data | `AI_AskLLM` (two-table: InputTable + ContextTable, co-partitioned by key) | `ai-text-analytics` |
+| External language detection | `AI_DetectLanguage` | `ai-text-analytics` |
+| External key phrase extraction | `AI_ExtractKeyPhrases` | `ai-text-analytics` |
+| External PII masking | `AI_MaskPII` (detects PII + returns `Masked_Phrase` with `*` replacement) | `ai-text-analytics` |
+| External NER (general named entities — people, places, orgs, dates) | `AI_RecognizeEntities` | `ai-text-analytics` |
+| External PII entity detection (structured metadata, no masking) | `AI_RecognizePIIEntities` | `ai-text-analytics` |
+| External text classification with custom label set | `AI_TextClassifier` — supports single-label and multi-label | `ai-text-analytics` |
+| External summarization | `AI_TextSummarize` — supports 1–5 compression levels | `ai-text-analytics` |
+| External translation | `AI_TextTranslate` | `ai-text-analytics` |
+
+**NER/PII function selection:**
+
+| Need | Function |
+|------|----------|
+| General named entities (people, places, orgs, dates) | `AI_RecognizeEntities` |
+| PII detection + masked text output | `AI_MaskPII` |
+| PII detection + structured metadata only (no masking) | `AI_RecognizePIIEntities` |
+
 ### Vector Search
 
 | Instead of this | Use this (native function) | Topic |
@@ -210,6 +235,18 @@ Native functions distribute across all AMPs. The result set returned to the agen
 **Vector dimension introspection:** Use `embedding.LENGTH()` to get the number of dimensions from a VECTOR column — never infer from UDT byte size. `SELECT embedding.LENGTH() AS dims FROM db.table SAMPLE 1;`
 
 **Finding the embedding model for an existing corpus:** Query `TD_SYSAI.TD_CollectionsV` or `TD_SYSAI.TD_VectorStores` to discover the model name, provider, and embedding size used to build a corpus. The query pipeline must use the exact same model — mismatched embeddings produce meaningless scores. See `vector-search` topic, "Discovering Existing Vector Stores" section.
+
+### Embeddings
+
+| Scenario | Use this | Topic |
+|----------|---------|-------|
+| REST-based embedding API (Azure, AWS Bedrock, GCP, NVIDIA NIM, LiteLLM) | `AI_TextEmbeddings` with `OutputFormat('VECTOR')` | `embeddings` |
+| In-database inference — no external API (air-gapped or latency-sensitive) | `ONNXEmbeddings` — model stored as BLOB in Vantage; requires tokenizer table | `embeddings`, `byom-model-loading` |
+| Classical word/document embeddings (GloVe-style) | `TD_WordEmbeddings` | `text-analytics` |
+| Store embeddings for reuse | CTAS with `VECTOR` column, then `TD_VectorNormalize(Approach('UNITVECTOR'))` at storage time | `embeddings`, `vector-search` |
+| Build fast approximate search index | `TD_HNSW` on normalized VECTOR column | `vector-search` |
+
+> **Always use `OutputFormat('VECTOR')`** when embeddings will be stored, normalized, or used with `TD_VectorDistance` / `TD_HNSW` / `TD_HNSWPredict`. The `VECTOR` type integrates directly with all vector search functions. See `data-types-casting` for VECTOR sizing (bytes, not dimensions).
 
 ### JSON Data
 
@@ -235,6 +272,23 @@ Native functions distribute across all AMPs. The result set returned to the agen
 | NVP string → JSON | `NVP2JSON('k=v&k2=v2')` | `json-functions` |
 | Vantage ARRAY → JSON | `ARRAY_TO_JSON(arr_col)` | `json-functions` |
 | ST_Geometry ↔ GeoJSON | `GeoJSONFromGeom(geom)` / `GeomFromGeoJSON(json, srid)` | `json-functions` |
+
+### BYOM — Bring Your Own Model
+
+Apply externally trained models to in-database data without moving data out of Teradata. All scoring functions share the same two-table pattern: `InputTable` + `ModelTable DIMENSION`. See `byom-model-loading` topic for model ingestion; see `byom-scoring` for full syntax.
+
+| Instead of this | Use this (native function) | Topic |
+|-----------------|---------------------------|-------|
+| Running PMML model inference externally | `PMMLPredict` | `byom-scoring` |
+| Running H2O MOJO or Driverless AI model externally | `H2OPredict` (supports contributions, stage probabilities, leaf node assignments) | `byom-scoring` |
+| Running ONNX tabular model externally | `ONNXPredict` (use `ShowModelInputFieldsMap('true')` to inspect tensor mapping) | `byom-scoring` |
+| Running Dataiku Thin JAR externally | `DataikuPredict` (model_id = fully qualified Java class name) | `byom-scoring` |
+| Running DataRobot Scoring Code externally | `DataRobotPredict` (cast DATE/TIMESTAMP to VARCHAR before scoring) | `byom-scoring` |
+| Running MLeap model externally | `MLeapPredict` | `byom-scoring` |
+| In-database text generation / seq-to-seq (translation, summarization) | `ONNXSeq2Seq` — ONNX transformer, no external API | `byom-scoring` |
+| In-database text classification (transformer) | `ONNXClassification` — supports softmax, argmax, custom output column mapping | `byom-scoring` |
+
+> **Architecture distinction:** `ONNXSeq2Seq` and `ONNXClassification` run Hugging Face ONNX transformer models entirely in-database. For REST-based LLM text tasks (sentiment, PII, translation, summarization), use the `AI_*` functions in `ai-text-analytics` instead.
 
 ### Statistical Testing
 
