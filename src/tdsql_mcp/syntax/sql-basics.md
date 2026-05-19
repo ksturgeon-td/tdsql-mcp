@@ -140,15 +140,70 @@ CREATE USER myuser AS
 -- Semicolons: required in BTEQ; optional in most client tools
 ```
 
-## Reserved Words as Column Names in Table Operator Clauses
+## Reserved Words and Identifier Quoting
 
-When a column name is a Teradata reserved word (e.g. `type`, `date`, `time`, `value`, `name`, `format`, `title`), it must be double-quoted. In regular SQL projections this looks normal:
+Quote any identifier (column, table, alias) that conflicts with a reserved word using **double quotes**:
 
 ```sql
-SELECT "type", "date" FROM db.my_table;
+SELECT id, "type", "format" FROM db.events;
+
+CREATE TABLE db.events (
+    id       INTEGER,
+    "type"   VARCHAR(30),   -- reserved word — must quote
+    label    VARCHAR(100)
+) PRIMARY INDEX (id);
 ```
 
-In table operator string arguments (`ACCUMULATE`, `IDColumn`, `TargetColumns`, `Accumulate`, etc.), the double-quotes must be embedded **inside** the single-quoted string:
+> **Quoted identifiers are case-sensitive.** Use consistent casing — `"type"` and `"TYPE"` are different identifiers.
+
+### Teradata-Specific Reserved Words — Common Identifier Conflicts
+
+The ANSI SQL reserved words are well-known. The words below are **Teradata-only** — not in the ANSI SQL-99 standard — so agents may not recognize them as reserved. Always quote these when using them as column, table, or alias names.
+
+**Words that frequently appear as column or table names:**
+
+| Reserved word | Commonly appears as | TD since |
+|--------------|---------------------|----------|
+| `TYPE` | transaction type, event type, record type | V2R3 |
+| `FORMAT` | file format, output format, date format | V2R3 |
+| `TITLE` | document title; also controls the TD column display header | V2R3 |
+| `MODE` | processing mode, run mode, lock mode | V2R3 |
+| `ACCOUNT` | account_id, account-related tables | V2R3 |
+| `LOG` | log tables, audit logs, log level | V2R3 |
+| `LOCK` | lock status, concurrency tables | V2R3 |
+| `HASH` | hash keys, checksums, deduplication columns | V2R3 |
+| `REQUEST` | request_id, API and service event tables | V2R3 |
+| `STATISTICS` | monitoring tables, collected stats columns | V2R3 |
+| `JOURNAL` | financial journals, transaction audit logs | V2R3 |
+| `CLUSTER` | cluster_id, partition or segment label | V2R3 |
+| `NAMED` | TD column alias syntax (`expr (NAMED alias)`) — risky as a column name | V2R3 |
+| `ENABLED` / `DISABLED` | feature flag columns, configuration status | V2R3 |
+| `CLASS` | object class, classification, CSS class | V2R5 |
+| `PROFILE` | user profiles, configuration profiles | V2R5 |
+| `SUMMARY` | summary text columns, reporting tables | V2R5 |
+| `THRESHOLD` | alert thresholds, monitoring limit columns | V2R5 |
+| `TRACE` | trace_id, debug or telemetry columns | V2R5 |
+
+**Teradata SQL extension keywords — these are clause keywords, not identifiers:**
+
+| Keyword | Purpose |
+|---------|---------|
+| `QUALIFY` | Filters window function results — like WHERE for OVER clauses; not in ANSI SQL |
+| `SAMPLE` | Random row sampling: `SELECT * FROM t SAMPLE 100` or `SAMPLE .05` |
+| `VOLATILE` | Session-scoped temp table: `CREATE VOLATILE TABLE ...` |
+| `LOCKING` | Lock modifier: `LOCKING TABLE t FOR ACCESS SELECT ...` |
+| `REPLACE` | TD DDL: `REPLACE VIEW` — not `CREATE OR REPLACE` |
+| `EXPLAIN` | Execution plan: `EXPLAIN SELECT ...` |
+| `FALLBACK` | Table-level data protection option at `CREATE TABLE` time |
+| `MULTISET` | Table type allowing duplicate rows: `CREATE MULTISET TABLE ...` |
+| `MACRO` | Stored parameterized query: `CREATE MACRO ...` |
+| `COLLECT` | Statistics collection: `COLLECT STATISTICS ON db.t COLUMN (col)` |
+| `BT` / `ET` | Begin Transaction / End Transaction |
+| `SEL` | Teradata shorthand for `SELECT` |
+
+### Reserved Words in Table Operator String Arguments
+
+In table operator clauses that take column names as **string arguments** (`Accumulate`, `IDColumn`, `TargetColumns`, `ResponseColumn`, etc.), double-quotes must be embedded **inside** the single-quoted string:
 
 ```sql
 -- WRONG: 'type' is a reserved word — Teradata will reject or misparse this
@@ -158,19 +213,16 @@ USING IDColumn('id') Accumulate('type', 'value')
 USING IDColumn('id') Accumulate('"type"', '"value"')
 ```
 
-This applies to **any** table operator clause that takes column names as string arguments:
+This applies to any table operator clause that takes column names as string arguments:
 
 ```sql
--- All of these follow the same rule
 IDColumn('"type"')
 TargetColumns('"value"', '"date"', 'non_reserved_col')
 Accumulate('"type"', 'amount', '"date"')
 ResponseColumn('"value"')
 ```
 
-**When in doubt, quote it.** Double-quoting a non-reserved word in a string argument is harmless; leaving a reserved word unquoted will cause a parse error.
-
-Common Teradata reserved words that appear as column names: `type`, `date`, `time`, `timestamp`, `value`, `name`, `format`, `title`, `level`, `mode`, `status`, `class`, `key`, `index`, `year`, `month`, `day`, `hour`, `minute`, `second`.
+**When in doubt, quote it.** Double-quoting a non-reserved word inside a string argument is harmless; leaving a reserved word unquoted will cause a parse error.
 
 ## Teradata Operator Differences
 
