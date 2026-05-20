@@ -6,6 +6,8 @@ Teradata Vantage has built-in distributed table operators for most analytics, ML
 
 **Before writing any SQL for analytics, transformation, or ML: check this guide and the relevant syntax topic.**
 
+> **Never write native table operator syntax from training knowledge.** Functions like `nPath`, `TD_XGBoost`, `TD_HNSW`, UAF functions, and `AI_*` functions have complex, version-specific parameter names, clause ordering, and required options. Training data knowledge of these functions is frequently incomplete or incorrect. This guide tells you **which** function to use — you must call `get_syntax_help(topic='<name>')` to load the authoritative syntax before writing any native function call.
+
 ---
 
 ## Minimize Data Movement — Critical at Teradata Scale

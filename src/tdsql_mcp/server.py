@@ -26,6 +26,10 @@ mcp = FastMCP(
         "text processing, and vector search. These run across all AMPs in parallel and outperform "
         "equivalent hand-written SQL. Do NOT write manual SQL for operations like scaling, encoding, "
         "binning, statistics, clustering, classification, or similarity search when a native function exists. "
+        "CRITICAL: Never write native table operator syntax (nPath, TD_XGBoost, TD_HNSW, UAF functions, "
+        "AI_* functions, etc.) from training knowledge — training data for these functions is frequently "
+        "incomplete or incorrect. Always call get_syntax_help to load authoritative syntax before writing "
+        "any native function call. "
         "Before writing any SQL: "
         "(1) call get_syntax_help(topic='sql-basics') for Teradata SQL fundamentals — reserved word quoting, "
         "DDL syntax, operator differences from standard SQL, "
@@ -290,11 +294,11 @@ def _read_topic(topic: str) -> str | None:
 def get_syntax_help(topic: str = "index") -> str:
     """Return Teradata SQL syntax reference for a given topic.
 
-    IMPORTANT: Call this tool BEFORE writing any analytics, transformation, ML, or data
-    preparation SQL. Teradata Vantage has native distributed table operators for most
-    operations — scaling, encoding, binning, statistics, clustering, classification, text
-    analytics, vector search, and more. These outperform hand-written SQL and should always
-    be preferred. Do not write manual SQL for an operation if a native function exists.
+    IMPORTANT: Call this tool BEFORE writing any native Teradata function or table operator.
+    Do NOT write syntax for nPath, TD_XGBoost, TD_HNSW, UAF functions, AI_* functions, or
+    any other native table operator from training knowledge — parameter names, clause ordering,
+    and required options are complex and training data is frequently wrong. This tool returns
+    the authoritative syntax. When in doubt about exact syntax, load the topic first.
 
     Recommended call order:
       1. get_syntax_help(topic='guidelines') — see the canonical mapping of common SQL
