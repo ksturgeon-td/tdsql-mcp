@@ -14,9 +14,10 @@ Check whether a Teradata database connection tool is available in this session (
 
 ## Step 2 — Load syntax reference
 
-Read both of the following files now before responding or writing any SQL:
+Read all three of the following files now before responding or writing any SQL:
 
-1. [syntax/guidelines.md](syntax/guidelines.md) — native function guidelines and operation mapping
-2. [syntax/index.md](syntax/index.md) — full topic index and workflow sequences
+1. [syntax/sql-basics.md](syntax/sql-basics.md) — Teradata SQL fundamentals: reserved word quoting, DDL gotchas, operator differences (MINUS/EXCEPT, <>/!=), QUALIFY, SAMPLE, REPLACE VIEW
+2. [syntax/guidelines.md](syntax/guidelines.md) — native function guidelines and operation mapping
+3. [syntax/index.md](syntax/index.md) — full topic index and workflow sequences
 
 When you need full syntax for a specific topic (e.g. `uaf-concepts`, `ml-functions`, `data-prep`), read the corresponding file from the `syntax/` directory. The index lists all available topics and their file names.
