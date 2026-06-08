@@ -354,11 +354,14 @@ def _parse_uri(uri: str) -> dict[str, Any]:
     """Parse a Teradata connection URI into a teradatasql.connect() kwargs dict.
 
     URI format:
-        teradata://user:password@host[:port][/database][?param=value&...]
+        teradata://[user:password@]host[:port][/database][?param=value&...]
+
+    user and password are optional — omit them for authentication methods that
+    don't use inline credentials (e.g. logmech=BROWSER, logmech=KRB5).
 
     URI components map to teradatasql parameters:
-        user     → user
-        password → password
+        user     → user      (optional)
+        password → password  (optional)
         host     → host
         port     → dbs_port  (Teradata default: 1025)
         /path    → database
@@ -378,7 +381,7 @@ def _parse_uri(uri: str) -> dict[str, Any]:
     params: dict[str, Any] = {}
 
     if not parsed.hostname:
-        raise ValueError("URI is missing a hostname. Expected: teradata://user:password@host/...")
+        raise ValueError("URI is missing a hostname. Expected: teradata://host/database or teradata://user:password@host/database")
 
     params["host"] = parsed.hostname
 
@@ -401,11 +404,6 @@ def _parse_uri(uri: str) -> dict[str, Any]:
     for key, values in parse_qs(parsed.query, keep_blank_values=True).items():
         params[key] = values[0]
 
-    if not params.get("user"):
-        raise ValueError("URI is missing a username. Expected: teradata://user:password@host/...")
-    if not params.get("password"):
-        raise ValueError("URI is missing a password. Expected: teradata://user:password@host/...")
-
     return params
 
 
@@ -424,11 +422,14 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Connection URI format:\n"
-            "  teradata://user:password@host[:port][/database][?param=value&...]\n\n"
+            "  teradata://[user:password@]host[:port][/database][?param=value&...]\n\n"
+            "Credentials are optional — omit them for browser or Kerberos auth.\n\n"
             "Examples:\n"
             "  teradata://alice:s3cr3t@myhost/mydb\n"
             "  teradata://alice:s3cr3t@myhost:1025/mydb?logmech=LDAP&encryptdata=true\n"
-            "  teradata://alice:s3cr3t@myhost/mydb?logon_timeout=30&sslmode=VERIFY-FULL\n\n"
+            "  teradata://alice:s3cr3t@myhost/mydb?logon_timeout=30&sslmode=VERIFY-FULL\n"
+            "  teradata://myhost/mydb?logmech=BROWSER\n"
+            "  teradata://myhost/mydb?logmech=KRB5\n\n"
             "Any teradatasql connection parameter can be added as a query-string argument.\n"
             "See: https://github.com/Teradata/python-driver#connection-parameters"
         ),
@@ -465,7 +466,7 @@ def main() -> None:
         parser.error(
             "A connection URI is required.\n"
             "Set DATABASE_URI env var or pass --uri.\n"
-            "Format: teradata://user:password@host/database"
+            "Format: teradata://[user:password@]host/database[?logmech=BROWSER]"
         )
 
     try:
