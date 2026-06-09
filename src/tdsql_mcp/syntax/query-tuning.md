@@ -61,6 +61,44 @@ Use `explain_query` before executing any non-trivial query. If the plan shows cr
 - Spool `(Last Use)` markers correctly placed (spool freed promptly)
 - Local aggregation (no redistribution needed)
 
+## OTF and NOS EXPLAIN Output
+
+When you `explain_query` a SELECT against an OTF (Iceberg or Delta Lake) table or a NOS foreign table, the plan includes additional sections not present for relational queries.
+
+### OTF EXPLAIN Characteristics
+
+- **Table operator:** The step reads via `TD_ICEBERG_READ` (Iceberg) or `TD_DELTA_READ` (Delta Lake) instead of a standard row retrieval
+- **REMOTE QUERY block:** A push-down section showing the predicate and projection filters that are sent to the external catalog or object store. Filters on partition columns and simple column comparisons are typically pushed down; complex expressions may not be
+- **Push-down predicates in JSON:** The pushed predicate appears in JSON format inside the REMOTE QUERY block, e.g.: `{"predicate": {"col": "order_date", "op": ">", "val": "2024-01-01"}}`
+
+**What to look for in OTF plans:**
+- Confirm that your WHERE clause predicates appear in the REMOTE QUERY push-down — if they don't, the full dataset is scanned in object storage before filtering in Vantage
+- Partition column predicates (e.g., `WHERE year = 2024`) should show partition pruning — the plan will reference a reduced set of files rather than all partitions
+- `estimated with no confidence` on OTF tables is common and expected when stats have not been collected — see COLLECT STATISTICS below
+
+### COLLECT STATISTICS for OTF Tables
+
+Use three-tier notation. Collecting stats on OTF tables improves join ordering and cardinality estimation.
+
+```sql
+-- Collect on an OTF table column
+COLLECT STATISTICS ON my_lake.sales_db.orders COLUMN (order_date);
+COLLECT STATISTICS ON my_lake.sales_db.orders COLUMN (customer_id, order_date);
+
+-- Copy statistics from a Teradata table to an OTF table (TD → OTF only)
+COPY STATISTICS ON mydb.orders_perm COLUMN (order_date)
+  TO my_lake.sales_db.orders;
+
+-- View collected OTF stats
+HELP STATISTICS my_lake.sales_db.orders;
+SHOW STATISTICS VALUES ON my_lake.sales_db.orders;
+```
+
+**Stats copy rules:**
+- TD → OTF: supported (copy stats from a Teradata table to an OTF table)
+- OTF → TD: syntax error
+- OTF → OTF: syntax error
+
 ## Collect Statistics
 Missing stats = bad plans. Collect on PI columns, join columns, and WHERE-clause columns:
 ```sql
