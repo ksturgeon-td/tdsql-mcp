@@ -6,8 +6,6 @@ Teradata Vantage has built-in distributed table operators for most analytics, ML
 
 **Before writing any SQL for analytics, transformation, or ML: check this guide and the relevant syntax topic.**
 
-> **Never write native table operator syntax from training knowledge.** Functions like `nPath`, `TD_XGBoost`, `TD_HNSW`, UAF functions, and `AI_*` functions have complex, version-specific parameter names, clause ordering, and required options. Training data knowledge of these functions is frequently incomplete or incorrect. This guide tells you **which** function to use — you must call `get_syntax_help(topic='<name>')` to load the authoritative syntax before writing any native function call.
-
 ---
 
 ## Minimize Data Movement — Critical at Teradata Scale
@@ -197,31 +195,6 @@ Native functions distribute across all AMPs. The result set returned to the agen
 | External TF-IDF | `TD_TFIDF` | `text-analytics` |
 | External word embeddings | `TD_WordEmbeddings` | `text-analytics` |
 
-### LLM-Powered Text Analytics (AI_* Functions)
-
-> **Prerequisites:** Requires an authorization object and LLM provider configuration before use. See `authorization-objects` and `llm-providers` topics. All functions use `TD_SYSFNLIB.<FunctionName>(ON ...)` — do **not** add a `PARTITION BY` clause.
-
-| Instead of this | Use this (native function) | Topic |
-|-----------------|---------------------------|-------|
-| External/post-hoc sentiment scoring | `AI_AnalyzeSentiment` | `ai-text-analytics` |
-| Per-row LLM API calls with question + context data | `AI_AskLLM` (two-table: InputTable + ContextTable, co-partitioned by key) | `ai-text-analytics` |
-| External language detection | `AI_DetectLanguage` | `ai-text-analytics` |
-| External key phrase extraction | `AI_ExtractKeyPhrases` | `ai-text-analytics` |
-| External PII masking | `AI_MaskPII` (detects PII + returns `Masked_Phrase` with `*` replacement) | `ai-text-analytics` |
-| External NER (general named entities — people, places, orgs, dates) | `AI_RecognizeEntities` | `ai-text-analytics` |
-| External PII entity detection (structured metadata, no masking) | `AI_RecognizePIIEntities` | `ai-text-analytics` |
-| External text classification with custom label set | `AI_TextClassifier` — supports single-label and multi-label | `ai-text-analytics` |
-| External summarization | `AI_TextSummarize` — supports 1–5 compression levels | `ai-text-analytics` |
-| External translation | `AI_TextTranslate` | `ai-text-analytics` |
-
-**NER/PII function selection:**
-
-| Need | Function |
-|------|----------|
-| General named entities (people, places, orgs, dates) | `AI_RecognizeEntities` |
-| PII detection + masked text output | `AI_MaskPII` |
-| PII detection + structured metadata only (no masking) | `AI_RecognizePIIEntities` |
-
 ### Vector Search
 
 | Instead of this | Use this (native function) | Topic |
@@ -229,68 +202,6 @@ Native functions distribute across all AMPs. The result set returned to the agen
 | Manual pairwise distance loops | `TD_VectorDistance` | `vector-search` |
 | External approximate nearest neighbor index | `TD_HNSW` / `TD_HNSWPredict` | `vector-search` |
 | External embedding storage type | `VECTOR` / `Vector32` data type | `data-types-casting` |
-
-**Inline NL Query → Embedding → Vector Search:** For RAG retrieval, use the full CTE pipeline pattern — embed the query inline with `AI_TEXTEMBEDDINGS`, normalize with `TD_VectorNormalize(Approach('UNITVECTOR'))`, and search with `TD_VectorDistance` against a pre-built corpus embedding table, all in a single SQL statement. See `vector-search` topic, "Inline NL Query → Embedding → Vector Search Pipeline" section.
-
-**Building a corpus embedding table:** Use the full workflow: source text table → `AI_TEXTEMBEDDINGS` → `TD_VectorNormalize(Approach('UNITVECTOR'))` → CTAS. See `vector-search` topic, "Full Corpus Build Workflow" section.
-
-**Vector dimension introspection:** Use `embedding.LENGTH()` to get the number of dimensions from a VECTOR column — never infer from UDT byte size. `SELECT embedding.LENGTH() AS dims FROM db.table SAMPLE 1;`
-
-**Finding the embedding model for an existing corpus:** Query `TD_SYSAI.TD_CollectionsV` or `TD_SYSAI.TD_VectorStores` to discover the model name, provider, and embedding size used to build a corpus. The query pipeline must use the exact same model — mismatched embeddings produce meaningless scores. See `vector-search` topic, "Discovering Existing Vector Stores" section.
-
-### Embeddings
-
-| Scenario | Use this | Topic |
-|----------|---------|-------|
-| REST-based embedding API (Azure, AWS Bedrock, GCP, NVIDIA NIM, LiteLLM) | `AI_TextEmbeddings` with `OutputFormat('VECTOR')` | `embeddings` |
-| In-database inference — no external API (air-gapped or latency-sensitive) | `ONNXEmbeddings` — model stored as BLOB in Vantage; requires tokenizer table | `embeddings`, `byom-model-loading` |
-| Classical word/document embeddings (GloVe-style) | `TD_WordEmbeddings` | `text-analytics` |
-| Store embeddings for reuse | CTAS with `VECTOR` column, then `TD_VectorNormalize(Approach('UNITVECTOR'))` at storage time | `embeddings`, `vector-search` |
-| Build fast approximate search index | `TD_HNSW` on normalized VECTOR column | `vector-search` |
-
-> **Always use `OutputFormat('VECTOR')`** when embeddings will be stored, normalized, or used with `TD_VectorDistance` / `TD_HNSW` / `TD_HNSWPredict`. The `VECTOR` type integrates directly with all vector search functions. See `data-types-casting` for VECTOR sizing (bytes, not dimensions).
-
-### JSON Data
-
-| Operation | Use this | Topic |
-|-----------|---------|-------|
-| Store JSON in a column | Native `JSON` type — `JSON(n)`, `STORAGE FORMAT BSON\|UBJSON` | `json-functions` |
-| Extract a scalar value from JSON | `JSONExtractValue('$.path')` or dot notation `j.field` | `json-functions` |
-| Extract multiple values / array | `JSONExtract('$..field')` → JSON array | `json-functions` |
-| Type-safe extraction (returns NULL on failure) | `JSONGETVALUE(j, '$.age' AS INTEGER)` | `json-functions` |
-| Check if a JSON path exists | `j.ExistValue('$.path')` → 1/0 | `json-functions` |
-| List all key paths in a document | `JSON_KEYS(ON (...) USING QUOTES('N'))` | `json-functions` |
-| Validate JSON string before loading | `JSON_CHECK('...')` → 'OK' or 'INVALID: reason' | `json-functions` |
-| Validate BSON binary before loading | `BSON_CHECK(bytes_col)` → 'OK' or 'INVALID: reason' | `json-functions` |
-| Convert binary JSON to text | `j.AsJSONText()` | `json-functions` |
-| Convert JSON to BSON | `j.AsBSON()` or `CAST(j AS JSON STORAGE FORMAT BSON)` | `json-functions` |
-| Estimate storage size | `j.StorageSize('BSON')` | `json-functions` |
-| SQL rows → JSON doc (simple) | `SELECT AS JSON col1, col2 FROM t` | `json-functions` |
-| SQL rows → JSON doc (hierarchical) | `JSON_COMPOSE(col, JSON_AGG(...) AS nested)` | `json-functions` |
-| SQL rows → JSON doc (any format, >64K) | `JSON_PUBLISH` table operator | `json-functions` |
-| JSON → relational rows (JSONPath) | `JSON_TABLE(ON (...) USING ROWEXPR(...) COLEXPR(...))` | `json-functions` |
-| JSON → relational rows (fast, CLOB) | `TD_JSONSHRED(ON (...) USING ROWEXPR(...) COLEXPR(...) RETURNTYPES(...))` | `json-functions` |
-| JSON → existing relational tables | `CALL SYSLIB.JSON_SHRED_BATCH(...)` | `json-functions` |
-| NVP string → JSON | `NVP2JSON('k=v&k2=v2')` | `json-functions` |
-| Vantage ARRAY → JSON | `ARRAY_TO_JSON(arr_col)` | `json-functions` |
-| ST_Geometry ↔ GeoJSON | `GeoJSONFromGeom(geom)` / `GeomFromGeoJSON(json, srid)` | `json-functions` |
-
-### BYOM — Bring Your Own Model
-
-Apply externally trained models to in-database data without moving data out of Teradata. All scoring functions share the same two-table pattern: `InputTable` + `ModelTable DIMENSION`. See `byom-model-loading` topic for model ingestion; see `byom-scoring` for full syntax.
-
-| Instead of this | Use this (native function) | Topic |
-|-----------------|---------------------------|-------|
-| Running PMML model inference externally | `PMMLPredict` | `byom-scoring` |
-| Running H2O MOJO or Driverless AI model externally | `H2OPredict` (supports contributions, stage probabilities, leaf node assignments) | `byom-scoring` |
-| Running ONNX tabular model externally | `ONNXPredict` (use `ShowModelInputFieldsMap('true')` to inspect tensor mapping) | `byom-scoring` |
-| Running Dataiku Thin JAR externally | `DataikuPredict` (model_id = fully qualified Java class name) | `byom-scoring` |
-| Running DataRobot Scoring Code externally | `DataRobotPredict` (cast DATE/TIMESTAMP to VARCHAR before scoring) | `byom-scoring` |
-| Running MLeap model externally | `MLeapPredict` | `byom-scoring` |
-| In-database text generation / seq-to-seq (translation, summarization) | `ONNXSeq2Seq` — ONNX transformer, no external API | `byom-scoring` |
-| In-database text classification (transformer) | `ONNXClassification` — supports softmax, argmax, custom output column mapping | `byom-scoring` |
-
-> **Architecture distinction:** `ONNXSeq2Seq` and `ONNXClassification` run Hugging Face ONNX transformer models entirely in-database. For REST-based LLM text tasks (sentiment, PII, translation, summarization), use the `AI_*` functions in `ai-text-analytics` instead.
 
 ### Statistical Testing
 
@@ -397,28 +308,7 @@ For any non-trivial query, run `explain_query` before executing. Read the plan a
 - `duplicated on all AMPs` on a small table — correct broadcast strategy
 - `execute the following steps in parallel` — independent steps dispatched concurrently
 
-For full EXPLAIN interpretation guidance, optimization playbook, stats collection patterns, and hash function reference (HASHROW/HASHBUCKET/HASHAMP/HASHBAKAMP for PI skew analysis): `get_syntax_help(topic="query-tuning")`.
-
----
-
-## External Data Access
-
-### Open Table Format (OTF) — Iceberg and Delta Lake
-
-For working with Apache Iceberg or Delta Lake tables in external catalogs (Hive, Glue, Unity, REST):
-- Load `get_syntax_help(topic='open-table-format')` before writing any OTF DDL or DML
-- OTF tables use three-tier dot notation: `datalake.database.table`
-- **HELP TABLE, not describe_table:** `DBC.ColumnsV` does not cover OTF tables. Use `HELP TABLE my_lake.db.table;` passed through `execute_query` to inspect OTF table columns
-- **HELP commands are first-class statements:** `HELP DATALAKE`, `HELP DATABASE`, `HELP TABLE` query the external catalog directly — do not rewrite them as SELECT queries against DBC views
-- For CREATE/ALTER/DROP TABLE and DML (INSERT/UPDATE/DELETE) on OTF tables, follow the syntax exactly — OTF has significant restrictions vs. relational SQL
-
-### Native Object Store (NOS) — S3, Azure, GCS
-
-For ad-hoc object store access (READ_NOS), persistent access (CREATE FOREIGN TABLE), or export (WRITE_NOS):
-- Load `get_syntax_help(topic='object-store')` before writing any NOS SQL
-- **HELP TABLE, not describe_table:** `DBC.ColumnsV` does not cover foreign tables. Use `HELP TABLE mydb.foreign_table;` or `READ_NOS(USING ... RETURNTYPE('NOSREAD_SCHEMA'))` to discover schema
-- For import workflows, use the foreign table → CAST view → permanent table pattern documented in the `object-store` topic
-- Collect statistics on payload attributes used in joins or filters to improve query plans against foreign tables
+For full EXPLAIN interpretation guidance, optimization playbook, and stats collection patterns: `get_syntax_help(topic="query-tuning")`.
 
 ---
 
@@ -430,9 +320,7 @@ Native functions do not cover everything. Use hand-written SQL for:
 - Date/time arithmetic (`date-time`)
 - CASE expressions and NULL handling (`conditional`)
 - Window functions for lag/lead features, running totals (`window-functions`)
-- Schema discovery via MCP tools first — `list_databases`, `list_tables`, `describe_table` cover the common cases; fall back to manual DBC.* queries only for capabilities not covered by those tools (`catalog-views`)
-- Bit/byte manipulation — `BITAND`, `BITOR`, `BITXOR`, `BITNOT`, `SHIFTLEFT`/`SHIFTRIGHT`, `ROTATELEFT`/`ROTATERIGHT`, `GETBIT`, `SETBIT`, `COUNTSET`, `SUBBITSTR`, `TO_BYTE` — all Teradata-specific functions, **no ANSI equivalents**; do not use `&`, `|`, `^`, `~` operators (`bit-byte-functions`)
-- JSON data — native `JSON` type with BSON/UBJSON binary formats; JSONPath extraction; shredding (JSON→relational) and publishing (relational→JSON) — all in-database (`json-functions`)
+- Schema discovery queries against DBC.* views (`catalog-views`)
 - One-off computations not covered by any native function
 
 If you are unsure whether a native function exists for an operation, call `get_syntax_help(topic='index')` and check.

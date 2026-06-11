@@ -98,30 +98,14 @@ WHERE DatabaseName = 'mydb' AND TableName = 'mytable'
 ORDER BY ColumnName;
 ```
 
-## Listing Accessible Databases
-
-Prefer the `list_databases` MCP tool — it calls `DBC.DatabasesV` which already filters to databases visible to the current session.
-
-`DBC.DatabasesV` answers "what databases exist and are visible to me?"  
-`DBC.AllRightsV` answers "what databases do I have explicit rights on?" (includes role-inherited grants)
-
-Use `DBC.AllRightsV` when you need to know what rights a specific user holds:
-
+## Access Rights
 ```sql
--- Databases a user has rights on (includes role-inherited grants)
-SELECT DISTINCT DatabaseName
-FROM DBC.AllRightsV
-WHERE UserName = 'some_user'
-ORDER BY DatabaseName;
-
--- Full rights detail for a user
+-- What access does the current user have on a database?
 SELECT AccessRight, DatabaseName, TableName
-FROM DBC.AllRightsV
-WHERE UserName = 'some_user'
+FROM DBC.UserRightsV
+WHERE UserName = USER
 ORDER BY DatabaseName, TableName;
 ```
-
-> **Do not use `DBC.UserRightsV` for database enumeration** — it shows only directly granted rights and misses role-inherited access. Use `DBC.AllRightsV` for a complete picture.
 
 ## Common Lookup Patterns
 ```sql
@@ -139,70 +123,3 @@ JOIN DBC.TablesV t
 WHERE c.DatabaseName = 'mydb'
 ORDER BY c.TableName, c.ColumnId;
 ```
-
----
-
-## Open Table Format (OTF) Catalog Views
-
-These views cover registered datalakes, external servers, and OTF statistics. They supplement the standard HELP commands (`HELP DATALAKE`, `HELP DATABASE`, `HELP TABLE`) — see `open-table-format` topic for HELP command syntax.
-
-### DBC.DatalakeInfoV — Registered Datalakes
-
-```sql
--- All registered datalakes and their properties
-SELECT DatalakeName, CatalogType, CatalogURL,
-       ObjectStoragePlatform, AuthorizationName, CommentString
-FROM DBC.DatalakeInfoV
-ORDER BY DatalakeName;
-```
-
-Columns include: `DatalakeName`, `CatalogType` (hive/glue/unity/rest/fabric), `CatalogURL`, `ObjectStoragePlatform` (S3/Azure/GCS), `AuthorizationName`, `CreateTimeStamp`, `CommentString`.
-
-### DBC.ServerV — External Servers
-
-```sql
--- All external server objects (includes datalakes)
-SELECT ServerName, ServerType, AuthorizationName, CommentString
-FROM DBC.ServerV
-ORDER BY ServerType, ServerName;
-```
-
-### DBC.ManagedOTFTablesV — Managed OTF Tables
-
-Lists OTF tables that Teradata has registered as managed (created via Vantage DDL rather than discovered from the catalog):
-
-```sql
-SELECT DatalakeName, DatabaseName, TableName, TableFormat,
-       CreateTimeStamp, LastAlterTimeStamp
-FROM DBC.ManagedOTFTablesV
-ORDER BY DatalakeName, DatabaseName, TableName;
-```
-
-### DBC.OtfStatsV — OTF Statistics
-
-Statistics collected on OTF table columns (via COLLECT STATISTICS with three-tier notation):
-
-```sql
--- Statistics collected on OTF tables
-SELECT DatabaseName, TableName, ColumnName, StatsType,
-       LastCollectTimeStamp, SampleSize
-FROM DBC.OtfStatsV
-WHERE DatabaseName = 'my_lake'
-ORDER BY TableName, ColumnName;
--- DatabaseName here is the datalake name
-```
-
-### DBC.AllStatsV — All Statistics (Teradata + OTF)
-
-Combined view of statistics across both relational Teradata tables and OTF tables:
-
-```sql
--- All stats (TD + OTF) for a database
-SELECT DatabaseName, TableName, ColumnName, StatsType,
-       LastCollectTimeStamp
-FROM DBC.AllStatsV
-WHERE DatabaseName = 'mydb'
-ORDER BY TableName;
-```
-
-`DBC.StatsV` covers only relational tables. Use `DBC.AllStatsV` when you need a single view across both table types.
