@@ -312,6 +312,27 @@ For full EXPLAIN interpretation guidance, optimization playbook, and stats colle
 
 ---
 
+## External Data Access
+
+### Open Table Format (OTF) — Iceberg and Delta Lake
+
+For working with Apache Iceberg or Delta Lake tables in external catalogs (Hive, Glue, Unity, REST):
+- Load `get_syntax_help(topic='open-table-format')` before writing any OTF DDL or DML
+- OTF tables use three-tier dot notation: `datalake.database.table`
+- **HELP TABLE, not describe_table:** `DBC.ColumnsV` does not cover OTF tables. Use `HELP TABLE my_lake.db.table;` passed through `execute_query` to inspect OTF table columns
+- **HELP commands are first-class statements:** `HELP DATALAKE`, `HELP DATABASE`, `HELP TABLE` query the external catalog directly — do not rewrite them as SELECT queries against DBC views
+- For CREATE/ALTER/DROP TABLE and DML (INSERT/UPDATE/DELETE) on OTF tables, follow the syntax exactly — OTF has significant restrictions vs. relational SQL
+
+### Native Object Store (NOS) — S3, Azure, GCS
+
+For ad-hoc object store access (READ_NOS), persistent access (CREATE FOREIGN TABLE), or export (WRITE_NOS):
+- Load `get_syntax_help(topic='object-store')` before writing any NOS SQL
+- **HELP TABLE, not describe_table:** `DBC.ColumnsV` does not cover foreign tables. Use `HELP TABLE mydb.foreign_table;` or `READ_NOS(USING ... RETURNTYPE('NOSREAD_SCHEMA'))` to discover schema
+- For import workflows, use the foreign table → CAST view → permanent table pattern documented in the `object-store` topic
+- Collect statistics on payload attributes used in joins or filters to improve query plans against foreign tables
+
+---
+
 ## When Manual SQL Is Appropriate
 
 Native functions do not cover everything. Use hand-written SQL for:
@@ -320,7 +341,9 @@ Native functions do not cover everything. Use hand-written SQL for:
 - Date/time arithmetic (`date-time`)
 - CASE expressions and NULL handling (`conditional`)
 - Window functions for lag/lead features, running totals (`window-functions`)
-- Schema discovery queries against DBC.* views (`catalog-views`)
+- Schema discovery via MCP tools first — `list_databases`, `list_tables`, `describe_table` cover the common cases; fall back to manual DBC.* queries only for capabilities not covered by those tools (`catalog-views`)
+- Bit/byte manipulation — `BITAND`, `BITOR`, `BITXOR`, `BITNOT`, `SHIFTLEFT`/`SHIFTRIGHT`, `ROTATELEFT`/`ROTATERIGHT`, `GETBIT`, `SETBIT`, `COUNTSET`, `SUBBITSTR`, `TO_BYTE` — no ANSI equivalents; do not use `&`, `|`, `^`, `~` operators (`bit-byte-functions`)
+- JSON data — native `JSON` type with BSON/UBJSON binary formats; JSONPath extraction; shredding and publishing — all in-database (`json-functions`)
 - One-off computations not covered by any native function
 
 If you are unsure whether a native function exists for an operation, call `get_syntax_help(topic='index')` and check.

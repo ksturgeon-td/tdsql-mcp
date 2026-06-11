@@ -123,3 +123,59 @@ JOIN DBC.TablesV t
 WHERE c.DatabaseName = 'mydb'
 ORDER BY c.TableName, c.ColumnId;
 ```
+
+---
+
+## Open Table Format (OTF) Catalog Views
+
+These views cover registered datalakes, external servers, and OTF statistics. They supplement the standard HELP commands (`HELP DATALAKE`, `HELP DATABASE`, `HELP TABLE`) — see `open-table-format` topic for HELP command syntax.
+
+### DBC.DatalakeInfoV — Registered Datalakes
+
+```sql
+SELECT DatalakeName, CatalogType, CatalogURL,
+       ObjectStoragePlatform, AuthorizationName, CommentString
+FROM DBC.DatalakeInfoV
+ORDER BY DatalakeName;
+```
+
+Columns include: `DatalakeName`, `CatalogType` (hive/glue/unity/rest/fabric), `CatalogURL`, `ObjectStoragePlatform` (S3/Azure/GCS), `AuthorizationName`, `CreateTimeStamp`, `CommentString`.
+
+### DBC.ServerV — External Servers
+
+```sql
+SELECT ServerName, ServerType, AuthorizationName, CommentString
+FROM DBC.ServerV
+ORDER BY ServerType, ServerName;
+```
+
+### DBC.ManagedOTFTablesV — Managed OTF Tables
+
+```sql
+SELECT DatalakeName, DatabaseName, TableName, TableFormat,
+       CreateTimeStamp, LastAlterTimeStamp
+FROM DBC.ManagedOTFTablesV
+ORDER BY DatalakeName, DatabaseName, TableName;
+```
+
+### DBC.OtfStatsV — OTF Statistics
+
+```sql
+SELECT DatabaseName, TableName, ColumnName, StatsType,
+       LastCollectTimeStamp, SampleSize
+FROM DBC.OtfStatsV
+WHERE DatabaseName = 'my_lake'
+ORDER BY TableName, ColumnName;
+```
+
+### DBC.AllStatsV — All Statistics (Teradata + OTF)
+
+```sql
+SELECT DatabaseName, TableName, ColumnName, StatsType,
+       LastCollectTimeStamp
+FROM DBC.AllStatsV
+WHERE DatabaseName = 'mydb'
+ORDER BY TableName;
+```
+
+`DBC.StatsV` covers only relational tables. Use `DBC.AllStatsV` when you need a single view across both table types.

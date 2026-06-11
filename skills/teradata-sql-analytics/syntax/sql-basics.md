@@ -172,3 +172,52 @@ WHERE status != 'active'
 -- RIGHT
 WHERE status <> 'active'
 ```
+
+---
+
+## External Data Access — Notation and SQL
+
+### Three-Tier Dot Notation (OTF Tables)
+
+Open Table Format tables (Iceberg, Delta Lake) use three-tier notation: `datalake.database.table`.
+
+```sql
+SELECT * FROM my_lake.sales_db.orders WHERE order_date >= DATE '2024-01-01';
+
+-- Join OTF table with a relational table
+SELECT o.order_id, c.name
+FROM my_lake.sales_db.orders o
+JOIN mydb.customers c ON o.customer_id = c.customer_id;
+```
+
+### HELP Commands — Pass Through as-is
+
+`HELP DATALAKE`, `HELP DATABASE`, and `HELP TABLE` are first-class Teradata statements for OTF and foreign table metadata. Pass them through `execute_query` exactly as written — do NOT rewrite as SELECT queries.
+
+```sql
+HELP DATALAKE my_lake;                    -- list databases in datalake
+HELP DATABASE my_lake.sales_db;           -- list tables in OTF database
+HELP TABLE my_lake.sales_db.orders;       -- describe OTF table columns
+HELP TABLE mydb.my_foreign_table;         -- describe foreign table columns
+```
+
+`describe_table` (which queries `DBC.ColumnsV`) does not work for OTF tables or NOS foreign tables.
+
+### READ_NOS — Two Equivalent Calling Forms
+
+```sql
+-- Explicit form — generate this when writing new SQL
+SELECT * FROM READ_NOS (
+  USING
+    LOCATION ('/S3/s3.amazonaws.com/bucket/path/')
+    AUTHORIZATION (my_auth)
+    RETURNTYPE ('NOSREAD_KEYS')
+) AS d;
+
+-- Implicit shorthand — valid syntax you may see in existing code; do not "fix" it
+SELECT * FROM (
+  LOCATION='/S3/s3.amazonaws.com/bucket/path/'
+  AUTHORIZATION=my_auth
+  RETURNTYPE='NOSREAD_KEYS'
+) AS d;
+```
