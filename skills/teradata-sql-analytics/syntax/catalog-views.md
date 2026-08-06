@@ -128,9 +128,13 @@ ORDER BY c.TableName, c.ColumnId;
 
 ## Open Table Format (OTF) Catalog Views
 
-These views cover registered datalakes, external servers, and OTF statistics. They supplement the standard HELP commands (`HELP DATALAKE`, `HELP DATABASE`, `HELP TABLE`) — see `open-table-format` topic for HELP command syntax.
+Use these views to discover and inspect Iceberg tables, Delta Lake tables, datalake objects, and OTF statistics registered in Teradata Vantage. These cover metadata that cannot be queried via `DBC.TablesV` or `DBC.ColumnsV`.
 
-### DBC.DatalakeInfoV — Registered Datalakes
+**Keyword index:** Iceberg, Delta Lake, Open Table Format, OTF, datalake, external catalog, Hive metastore, AWS Glue, Databricks Unity Catalog, Polaris, Gravitino, Lake Formation, OTF statistics, managed tables, external servers, `HELP DATALAKE`, `HELP DATABASE`, `HELP TABLE`.
+
+These views supplement the HELP commands — see `open-table-format` topic for full DDL/DML syntax and HELP command usage.
+
+### DBC.DatalakeInfoV — Registered Datalakes (Iceberg / Delta Lake catalogs)
 
 ```sql
 SELECT DatalakeName, CatalogType, CatalogURL,

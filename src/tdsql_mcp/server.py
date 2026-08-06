@@ -310,6 +310,8 @@ def get_syntax_help(topic: str = "index") -> str:
     Topic quick-reference for common scenarios:
       - Apache Iceberg tables, Delta Lake tables, Open Table Format (OTF), DATALAKE objects,
         three-tier notation (datalake.db.table), time travel → topic='open-table-format'
+      - Iceberg/Delta Lake catalog metadata, DBC.DatalakeInfoV, DBC.ManagedOTFTablesV,
+        DBC.OtfStatsV, list datalakes, list OTF tables → topic='catalog-views'
       - S3, Azure Blob, GCS, READ_NOS, WRITE_NOS, CREATE FOREIGN TABLE, NOS,
         object store, foreign table → topic='object-store'
       - ML, XGBoost, random forest, clustering, regression → topic='ml-functions'

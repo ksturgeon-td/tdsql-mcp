@@ -31,6 +31,7 @@ If you know a native function exists but haven't loaded its syntax topic, say so
 
 **Topic triggers — load these immediately when the task involves:**
 - Apache Iceberg, Delta Lake, Open Table Format, OTF tables, DATALAKE objects, three-tier notation (`datalake.db.table`) → read [syntax/open-table-format.md](syntax/open-table-format.md)
+- Iceberg/Delta Lake catalog metadata, list datalakes, list OTF tables, DBC.DatalakeInfoV, DBC.ManagedOTFTablesV, DBC.OtfStatsV → read [syntax/catalog-views.md](syntax/catalog-views.md)
 - S3, Azure Blob, GCS, object store, READ_NOS, WRITE_NOS, CREATE FOREIGN TABLE, NOS foreign tables → read [syntax/object-store.md](syntax/object-store.md)
 - `describe_table` does not work for OTF or foreign tables — use `HELP TABLE` passed through `execute_query` instead
 
