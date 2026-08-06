@@ -31,6 +31,10 @@ mcp = FastMCP(
         "AI_* functions, etc.) from training knowledge — training data for these functions is frequently "
         "incomplete or incorrect. Always call get_syntax_help to load authoritative syntax before writing "
         "any native function call. "
+        "CRITICAL: For Apache Iceberg or Delta Lake (Open Table Format) tables: always call "
+        "get_syntax_help(topic='open-table-format') before writing any DDL, DML, or query. "
+        "CRITICAL: For Native Object Store access (READ_NOS, WRITE_NOS, foreign tables pointing to "
+        "S3, Azure, or GCS): always call get_syntax_help(topic='object-store') before writing any SQL. "
         "Before writing any SQL: "
         "(1) call get_syntax_help(topic='sql-basics') for Teradata SQL fundamentals — reserved word quoting, "
         "DDL syntax, operator differences from standard SQL, "
@@ -40,6 +44,8 @@ mcp = FastMCP(
         "(4) load the relevant topic(s) for exact syntax. "
         "Use explain_query to validate syntax before executing. "
         "Use describe_table and list_tables to explore the schema. "
+        "IMPORTANT: describe_table does not work for OTF (Iceberg/Delta Lake) tables or NOS foreign tables "
+        "— use HELP TABLE passed through execute_query instead. "
         "Results are returned as JSON."
     ),
 )
@@ -300,6 +306,16 @@ def get_syntax_help(topic: str = "index") -> str:
     any other native table operator from training knowledge — parameter names, clause ordering,
     and required options are complex and training data is frequently wrong. This tool returns
     the authoritative syntax. When in doubt about exact syntax, load the topic first.
+
+    Topic quick-reference for common scenarios:
+      - Apache Iceberg tables, Delta Lake tables, Open Table Format (OTF), DATALAKE objects,
+        three-tier notation (datalake.db.table), time travel → topic='open-table-format'
+      - S3, Azure Blob, GCS, READ_NOS, WRITE_NOS, CREATE FOREIGN TABLE, NOS,
+        object store, foreign table → topic='object-store'
+      - ML, XGBoost, random forest, clustering, regression → topic='ml-functions'
+      - Embeddings, vector search, semantic search, RAG → topic='vector-search' or 'embeddings'
+      - Time series, forecasting, ARIMA → topic='uaf-concepts' then 'uaf-forecasting'
+      - LLM text analytics, sentiment, PII → topic='ai-text-analytics'
 
     Recommended call order:
       1. get_syntax_help(topic='guidelines') — see the canonical mapping of common SQL

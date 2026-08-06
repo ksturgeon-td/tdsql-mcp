@@ -29,6 +29,11 @@ Apply these principles throughout the session:
 **1. Don't assume. Surface uncertainty and tradeoffs.**
 If you know a native function exists but haven't loaded its syntax topic, say so — don't write syntax from training knowledge. When multiple approaches fit (exact vs. approximate vector search, ARIMA vs. Holt-Winters, TD_XGBoost vs. TD_GLM), state the tradeoff and let the user decide. If the schema or task is ambiguous, ask before writing SQL.
 
+**Topic triggers — load these immediately when the task involves:**
+- Apache Iceberg, Delta Lake, Open Table Format, OTF tables, DATALAKE objects, three-tier notation (`datalake.db.table`) → read [syntax/open-table-format.md](syntax/open-table-format.md)
+- S3, Azure Blob, GCS, object store, READ_NOS, WRITE_NOS, CREATE FOREIGN TABLE, NOS foreign tables → read [syntax/object-store.md](syntax/object-store.md)
+- `describe_table` does not work for OTF or foreign tables — use `HELP TABLE` passed through `execute_query` instead
+
 **2. Minimum SQL that solves the problem. Nothing speculative.**
 Don't add columns, CTEs, or transformations that weren't requested. At Teradata scale, unnecessary work has real cost. Load only the syntax topics needed for the current task.
 
