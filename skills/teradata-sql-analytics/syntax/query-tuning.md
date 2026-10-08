@@ -10,7 +10,7 @@ EXPLAIN SELECT col1, col2 FROM db.table WHERE id = 1;
 DYNAMIC EXPLAIN SELECT col1, col2 FROM db.table WHERE id = 1;
 ```
 
-Use `explain_query` before executing any non-trivial query. If the plan shows critical issues (see below), fix and re-EXPLAIN before running.
+Run `EXPLAIN` before executing any non-trivial query. If the plan shows critical issues (see below), fix and re-EXPLAIN before running.
 
 ### EXPLAIN Phrase Glossary
 
