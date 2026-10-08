@@ -356,3 +356,33 @@ FROM nPath(
 ) AS dt
 GROUP BY 1 ORDER BY 2 DESC;
 ```
+
+---
+
+## TD_PathSummarizer — Path Summary Generation
+
+Builds a hierarchical path summary from ordered path-generation data by partition and sequence. Commonly used to materialize a connected tree representation of traversed states, prefixes, and parent-child relationships for downstream analysis.
+
+```sql
+TD_PathSummarizer (
+    ON { table | view | (query) } AS InputTable
+        PARTITION BY partition_column [,...]
+    USING
+        [ CountColumn('count_column') ]
+        [ Delimiter('delimiter') ]
+        SeqColumn('sequence_column')
+        PartitionNames('partition_column' [,...])
+        [ HashCode({ 'true' | 't' | 'yes' | 'y' | '1' |
+                    'false' | 'f' | 'no' | 'n' | '0' }) ]
+        PrefixColumn('prefix_column')
+)
+```
+
+> **Notes:**
+> - The input must be aliased as `InputTable`
+> - `SeqColumn`, `PartitionNames`, and `PrefixColumn` are required
+> - `PartitionNames` must match the partition columns in the `PARTITION BY` clause
+> - `CountColumn`, `Delimiter`, and `HashCode` are optional
+> - CLOB columns are not supported in partition columns
+> - The function expects path-generator-shaped sequence and prefix data
+> - Output fields include `node`, `parent`, `children`, `cnt`, `depth`, and `prefix`

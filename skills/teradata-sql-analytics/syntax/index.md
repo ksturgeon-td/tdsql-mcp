@@ -38,10 +38,10 @@ Use `get_syntax_help(topic="<name>")` to load any topic below.
 | `data-cleaning` | NULL handling, deduplication, string cleaning, outlier detection, type validation |
 | `data-prep` | Feature engineering: binning, encoding, scaling, pivoting, polynomial features, dimensionality reduction, Fit/Transform pairs, TD_SMOTE oversampling |
 | `utility-functions` | TD_FillRowID, TD_NumApply, TD_RoundColumns, TD_StrApply |
-| `text-analytics` | Text tokenization, classification, and entity extraction: TD_NgramSplitter, TD_NaiveBayesTextClassifier, TD_NERExtractor |
+| `text-analytics` | Text tokenization, classification, tagging, and entity extraction: TD_NgramSplitter, TD_TextParser, TD_TextTagger, TD_TFIDF, TD_SentimentExtractor, TD_WordEmbeddings, TD_NaiveBayesTextClassifier, TD_TextMorph, TD_POSTagger, TD_NERExtractor |
 | `hypothesis-testing` | Statistical hypothesis tests: TD_ANOVA, TD_ChiSq, TD_FTest, TD_ZTest |
 | `association-analysis` | Frequent itemset mining and collaborative filtering: TD_Apriori, TD_CFilter |
-| `path-analysis` | Event sequence analysis: Attribution, Sessionize, nPath |
+| `path-analysis` | Event sequence analysis: Attribution, Sessionize, nPath, TD_PathSummarizer |
 | `model-evaluation` | Model evaluation and explainability: TD_TrainTestSplit, TD_ClassificationEvaluator, TD_RegressionEvaluator, TD_ROC, TD_Silhouette, TD_SHAP |
 | `ml-patterns` | End-to-end ML pipeline patterns: CTE prediction pipeline, elbow method, train/evaluate/retrain loop, class imbalance workflow, micromodeling |
 | `vector-search` | Vector similarity search: TD_VectorDistance (exact), TD_HNSW/TD_HNSWPredict (approximate), KMeans IVF pattern |
@@ -100,6 +100,7 @@ Recommended topic reading order for common end-to-end tasks. Load these topics i
 | **Micromodeling (per-segment models)** | `ml-functions` (TD_GLM) → `ml-patterns` (micromodeling) |
 | **Semantic search / RAG embeddings** | `authorization-objects` → `llm-providers` → `embeddings` → `vector-search` |
 | **In-database ONNX inference** | `byom-model-loading` → `embeddings` (ONNXEmbeddings) → `vector-search` |
+| **Discover available Iceberg / Delta Lake / OTF sources** | `catalog-views` (DBC.DatalakeInfoV + TD_SERVER_DB section) → `open-table-format` |
 | **Query Iceberg / Delta Lake tables** | `open-table-format` |
 | **Import NOS data into Vantage** | `object-store` (foreign table → CAST view → permanent table) |
 | **Export Vantage data to S3/Azure/GCS** | `object-store` (WRITE_NOS) |
@@ -109,5 +110,8 @@ Recommended topic reading order for common end-to-end tasks. Load these topics i
 | **Digital signal filtering** | `uaf-concepts` → `uaf-utility` (TD_FILTERFACTORY1D) → `uaf-dsp` (TD_CONVOLVE) |
 
 ---
-> **Adding topics:** Drop a new `.md` file into `src/tdsql_mcp/syntax/` and it appears here
-> automatically — no code changes needed.
+> **Adding topics:** Drop a new `.md` file into the matching category subfolder
+> (`core/`, `functions/`, `analytics/`, `uaf/`, `geospatial/`, `reference/`). The
+> filename (without `.md`) is the topic slug — it **must be globally unique
+> across subfolders**. Run `bash scripts/check-unique-slugs.sh` before pushing.
+> Add a row to the matching table above so the LLM can discover it.
