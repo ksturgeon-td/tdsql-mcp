@@ -100,8 +100,11 @@ CREATE AUTHORIZATION user1.my_auth
 USER '<access_key_id_or_client_id>'
 PASSWORD '<secret_key_or_client_secret>';
 
--- Grant execute privilege to other users
+-- Grant execute to a specific user
 GRANT EXECUTE ON user1.my_auth TO user2 WITH GRANT OPTION;
+
+-- Grant execute at the database level (covers all auth objects in the DB — preferred for roles)
+GRANT EXECUTE ON <db> TO <role_name>;
 ```
 
 ### AWS Assume Role
@@ -131,12 +134,18 @@ All DATALAKE objects are created in `TD_SERVER_DB`. `TABLE FORMAT` is specified 
 
 ### Syntax
 
+> **EXTERNAL SECURITY matching rule:** The keywords in `EXTERNAL SECURITY` must match how
+> the auth object was created. Plain auth (no `AS` clause) → no keywords in the reference,
+> qualified `db.auth` name allowed. `AS DEFINER TRUSTED` → `DEFINER TRUSTED` keyword required,
+> unqualified name only. Mismatch raises Error 6953 or Error 3706. Plain auth with qualified
+> reference is the verified production pattern for DATALAKE objects.
+
 ```sql
 CREATE DATALAKE <datalake_name>
     EXTERNAL SECURITY [DEFINER TRUSTED | [INVOKER] TRUSTED] CATALOG <auth_name>,
     EXTERNAL SECURITY [DEFINER TRUSTED | [INVOKER] TRUSTED] STORAGE <auth_name>
 USING
-    catalog_type ('<type>')               -- Required: hive|glue|unity|rest|fabric
+    catalog_type ('<type>')               -- Required: hive|glue|unity|rest|fabric|biglake
     [catalog_location ('<uri>')]          -- Required: hive (thrift://...), unity (https://...), rest
     [storage_location ('<uri>')]          -- Required: hive, glue; optional: unity on Azure
     [storage_region ('<region>')]         -- Required: glue, hive; e.g. 'us-west-2'

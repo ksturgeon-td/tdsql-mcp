@@ -156,11 +156,17 @@ SELECT DatalakeName, OTFTableFormat, CatalogType, CatalogLocation,
        UnityCatalogName, StorageAccountName
 FROM DBC.DatalakeInfoV
 ORDER BY DatalakeName;
+-- String values include embedded single quotes, e.g. CatalogType returns 'glue' not glue
 ```
 
 Columns include: `DatalakeName`, `OTFTableFormat` (ICEBERG/DELTA), `CatalogType`
 (hive/glue/unity/rest/fabric/biglake), `CatalogLocation` (catalog URL / AWS region),
 `StorageLocation`, `StorageEndPoint`, `StorageRegion`, `UnityCatalogName`, `StorageAccountName`.
+
+Once a datalake name is known, get its full DDL (auth names, catalog config):
+```sql
+SHOW DATALAKE <datalake_name>;
+```
 
 ### DBC.ServerV — External Servers (primary discovery path)
 
@@ -174,7 +180,7 @@ FROM DBC.ServerV
 ORDER BY ServerName;
 -- DataBaseName: the database this server is registered in (usually TD_SERVER_DB)
 -- TableFormat: ICEBERG, DELTA, or blank for non-OTF servers
--- AuthorizationType: type of the auth object (S = standard, etc.)
+-- AuthorizationType: may appear blank on some deployments
 ```
 
 > **Note:** `DBC.ServerV` does not have `ServerType` or `CommentString` columns.

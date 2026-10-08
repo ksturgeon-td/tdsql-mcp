@@ -31,24 +31,27 @@ EXTERNALID 'external_id_value'
 
 | Clause | Meaning |
 |--------|---------|
-| `AS DEFINER` | Shared access — the authorization object can be used by multiple users of the database in which it resides. Can be created in any database. |
+| `AS DEFINER` | Shared access — usable by multiple users of the database. Can be created in any database. |
 | `AS INVOKER` | Exclusive access by the creating user. Typically must be created in the current user's own database; exact privilege requirements may vary. |
-| `TRUSTED` | Required when the authorization object is referenced in an `EXTERNAL SECURITY` clause (CREATE FOREIGN TABLE, CREATE FUNCTION MAPPING). |
+| `TRUSTED` | Required when the auth object is referenced in an `EXTERNAL SECURITY` clause (CREATE FOREIGN TABLE, CREATE FUNCTION MAPPING). |
 
-> **EXTERNAL SECURITY clause — qualified vs unqualified name:**
-> - **FOREIGN TABLE:** `EXTERNAL SECURITY DEFINER TRUSTED <auth_name>` — **unqualified name only.**
->   Using a qualified `db.auth_name` raises Error 3706. The auth object must be in the **same
->   database as the foreign table**.
-> - **DATALAKE:** `EXTERNAL SECURITY DEFINER TRUSTED CATALOG <db>.<auth_name>` — qualified
->   name is correct and expected.
+> **EXTERNAL SECURITY — the reference must match how the auth object was created:**
+>
+> | Auth created as | `EXTERNAL SECURITY` reference | Qualified `db.auth` allowed? |
+> |---|---|---|
+> | Plain (no `AS` clause) | `EXTERNAL SECURITY <db>.<auth>` (no keywords) | **Yes** — verified for DATALAKE and FOREIGN TABLE |
+> | `AS DEFINER TRUSTED` | `EXTERNAL SECURITY DEFINER TRUSTED <auth>` | **No** — Error 3706; auth must be in the same DB as the object |
+> | `AS INVOKER TRUSTED` | `EXTERNAL SECURITY INVOKER TRUSTED <auth>` | No (per syntax docs; not verified on EC) |
+>
+> A mismatch between the auth creation form and the EXTERNAL SECURITY reference raises
+> Error 6953 (`authorization definition does not match`).
 >
 > **Elastic Compute:** For DATALAKE objects, the auth object must be in a **GLOBAL database**
-> so it replicates across all CE instances alongside the datalake. See `ec-setup-skill` for
-> the full replication model. For NOS foreign tables, the auth object stays in the same
-> local or global database as the table.
+> so it replicates across all CE instances alongside the datalake. For NOS foreign tables,
+> the auth object can be in the same local or global database as the table.
 >
-> **GRANT EXECUTE:** After creating an auth object, grant `EXECUTE` so roles and databases
-> can use it. See the [Permissions](#permissions) section below.
+> **GRANT EXECUTE:** After creating an auth object, grant `EXECUTE` at the database level
+> so roles can use it. See the [Permissions](#permissions) section below.
 
 **Form 1 — user_password_auth:**
 - **`CREATE`** — creates a new authorization object; fails if it already exists
@@ -116,10 +119,13 @@ CREATE MULTISET FOREIGN TABLE mydb.orders_ft,
     USING ( LOCATION ('/S3/s3.amazonaws.com/my-bucket/') STOREDAS ('PARQUET') )
 NO PRIMARY INDEX;
 
--- (OTF DATALAKE — auth in a GLOBAL database; qualified name is correct here)
+-- (OTF DATALAKE — plain auth in a GLOBAL database; no keywords in EXTERNAL SECURITY)
+CREATE AUTHORIZATION global_db.s3_auth
+    USER '{AWS_ACCESS_KEY}' PASSWORD '{AWS_SECRET_KEY}';
+
 CREATE DATALAKE my_lake
-    EXTERNAL SECURITY DEFINER TRUSTED CATALOG global_db.s3_auth,
-    EXTERNAL SECURITY DEFINER TRUSTED STORAGE global_db.s3_auth
+    EXTERNAL SECURITY CATALOG global_db.s3_auth,   -- no DEFINER/TRUSTED keywords
+    EXTERNAL SECURITY STORAGE global_db.s3_auth
 USING catalog_type ('glue') ... TABLE FORMAT iceberg;
 ```
 
