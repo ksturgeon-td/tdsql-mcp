@@ -111,7 +111,7 @@ CREATE AUTHORIZATION assume_role_auth
 USING
 AUTHSERVICETYPE 'ASSUME_ROLE'
 ROLENAME '<IAM_role_ARN>'
-EXTERNAL_ID '<external_id_from_trust_policy>';
+EXTERNALID '<external_id_from_trust_policy>';
 ```
 
 ### Azure Active Directory Service Principal
@@ -174,7 +174,7 @@ TABLE FORMAT iceberg;
 CREATE AUTHORIZATION delta_assume_role
 USING AUTHSERVICETYPE 'ASSUME_ROLE'
 ROLENAME '<IAM_role_ARN>'
-EXTERNAL_ID '<external_id>';
+EXTERNALID '<external_id>';
 
 CREATE DATALAKE my_delta_lake
 EXTERNAL SECURITY CATALOG delta_assume_role,

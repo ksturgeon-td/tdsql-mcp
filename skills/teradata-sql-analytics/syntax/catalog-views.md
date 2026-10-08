@@ -107,6 +107,16 @@ WHERE UserName = USER
 ORDER BY DatabaseName, TableName;
 ```
 
+## Database Hierarchy
+```sql
+-- List direct children of a parent database (Elastic Compute: global databases)
+-- DBC.ChildrenV columns are Child and Parent (NOT DatabaseName / ParentName)
+SELECT Child AS DatabaseName FROM DBC.ChildrenV WHERE Parent = 'TD_GLOBAL';
+
+-- Find all databases that are children of TD_PARENT (local/user databases)
+SELECT Child AS DatabaseName FROM DBC.ChildrenV WHERE Parent = 'TD_PARENT';
+```
+
 ## Common Lookup Patterns
 ```sql
 -- Fully qualified table info in one query
@@ -136,22 +146,38 @@ These views supplement the HELP commands — see `open-table-format` topic for f
 
 ### DBC.DatalakeInfoV — Registered Datalakes (Iceberg / Delta Lake catalogs)
 
+> **Access note:** On some systems, `DBC.DatalakeInfoV` raises **Error 3523** (not accessible)
+> even for `TD_CREATOR` / `TD_ADMIN` users. If you get Error 3523 or an empty result set,
+> fall back to `DBC.ServerV` and `SHOW DATALAKE <name>` for discovery.
+
 ```sql
-SELECT DatalakeName, CatalogType, CatalogURL,
-       ObjectStoragePlatform, AuthorizationName, CommentString
+SELECT DatalakeName, OTFTableFormat, CatalogType, CatalogLocation,
+       StorageLocation, StorageEndPoint, StorageRegion,
+       UnityCatalogName, StorageAccountName
 FROM DBC.DatalakeInfoV
 ORDER BY DatalakeName;
 ```
 
-Columns include: `DatalakeName`, `CatalogType` (hive/glue/unity/rest/fabric), `CatalogURL`, `ObjectStoragePlatform` (S3/Azure/GCS), `AuthorizationName`, `CreateTimeStamp`, `CommentString`.
+Columns include: `DatalakeName`, `OTFTableFormat` (ICEBERG/DELTA), `CatalogType`
+(hive/glue/unity/rest/fabric/biglake), `CatalogLocation` (catalog URL / AWS region),
+`StorageLocation`, `StorageEndPoint`, `StorageRegion`, `UnityCatalogName`, `StorageAccountName`.
 
-### DBC.ServerV — External Servers
+### DBC.ServerV — External Servers (primary discovery path)
+
+Use `DBC.ServerV` as the primary fallback when `DBC.DatalakeInfoV` is inaccessible or
+returns no rows. It lists all registered foreign servers, including OTF datalakes.
 
 ```sql
-SELECT ServerName, ServerType, AuthorizationName, CommentString
+SELECT ServerName, DataBaseName, AuthorizationName, AuthorizationType,
+       CatalogAuthName, TableFormat
 FROM DBC.ServerV
-ORDER BY ServerType, ServerName;
+ORDER BY ServerName;
+-- DataBaseName: the database this server is registered in (usually TD_SERVER_DB)
+-- TableFormat: ICEBERG, DELTA, or blank for non-OTF servers
+-- AuthorizationType: type of the auth object (S = standard, etc.)
 ```
+
+> **Note:** `DBC.ServerV` does not have `ServerType` or `CommentString` columns.
 
 ### DBC.ManagedOTFTablesV — Managed OTF Tables
 

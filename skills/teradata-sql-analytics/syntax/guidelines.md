@@ -32,12 +32,18 @@ SELECT * FROM TD_ColumnSummary(
 ) AS t;
 ```
 
-**2. Use SAMPLE or TOP N when you need to see rows**
+**2. Use SHOW TABLE / SHOW SELECT to inspect structure; TOP N only for sample rows**
 
 ```sql
--- Explore structure and values without touching the full table
+-- Confirm column names and types — no data scan
+SHOW TABLE db.large_table;
+SHOW SELECT * FROM db.my_view;
+
+-- Sample rows when you need actual data values (structure already known)
 SELECT TOP 100 * FROM db.large_table SAMPLE 0.001;
 ```
+
+`TOP N` on a large table can perform badly even when N is small. Use `SHOW TABLE` or `SHOW SELECT *` for structure checks.
 
 **3. Filter before you function — push predicates as deep as possible**
 
@@ -139,6 +145,22 @@ When users ask about available data — especially external, Iceberg, or datalak
 | "What columns does OTF table X.Y.Z have?" | `HELP TABLE X.Y.Z` | `open-table-format` |
 | "What NOS / object-store foreign tables exist?" | `SELECT TableName FROM DBC.TablesV WHERE DatabaseName = 'X' AND TableKind = 'O'` | `catalog-views`, `object-store` |
 | "What QueryGrid foreign servers are there?" | `HELP DATABASE TD_SERVER_DB` — rows with `Kind = 'K'` that are not OTF datalakes | `catalog-views` |
+
+**Schema inspection — use SHOW, not SELECT TOP:**
+
+```sql
+-- WRONG: can perform very badly on large tables; avoid for structure inspection
+SELECT TOP 1 * FROM db.large_table;
+
+-- RIGHT: SHOW TABLE returns DDL (column names, types, constraints) — no data scan
+SHOW TABLE db.large_table;
+
+-- RIGHT: SHOW SELECT returns the resolved column list for a view or derived query
+SHOW SELECT * FROM db.my_view;
+SHOW SELECT * FROM db.large_table;
+```
+
+Use `SHOW TABLE` or `SHOW SELECT *` whenever the goal is to confirm structure, not data. Reserve `TOP N` for when you actually need sample rows.
 
 **OTF discovery decision tree:**
 1. Try `DBC.DatalakeInfoV` — lists all registered datalakes when the user has view access.
