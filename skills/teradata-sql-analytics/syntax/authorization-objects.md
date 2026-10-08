@@ -8,10 +8,11 @@ Rather than embedding API keys or access tokens directly in a function call, you
 
 ## CREATE / REPLACE AUTHORIZATION
 
-Two forms are supported: standard user/password credentials, and IAM role assumption (AWS only).
+Three forms are supported: standard user/password credentials, credentials with a DEFINER or INVOKER execution context, and IAM role assumption (AWS only).
 
 ```sql
 { CREATE | REPLACE } AUTHORIZATION [DatabaseName.]authorization_name
+    [ AS { DEFINER | INVOKER } TRUSTED ]
     { user_password_auth | extended_auth }
 
 -- Form 1: user_password_auth (all providers)
@@ -25,6 +26,14 @@ ROLENAME 'arn:aws:iam::account-id:role/role-name'
 EXTERNALID 'external_id_value'
 [ DURATION_SECONDS 'duration_in_seconds' ]
 ```
+
+**`AS DEFINER` vs `AS INVOKER` vs `TRUSTED`:**
+
+| Clause | Meaning |
+|--------|---------|
+| `AS DEFINER` | Shared access — the authorization object can be used by multiple users of the database in which it resides. Can be created in any database. |
+| `AS INVOKER` | **Default.** Exclusive access by the creating user. Must be created in the current user's own database. |
+| `TRUSTED` | Optional. Required when the authorization object is referenced in an `EXTERNAL SECURITY` clause (CREATE FOREIGN TABLE, CREATE FUNCTION MAPPING). |
 
 **Form 1 — user_password_auth:**
 - **`CREATE`** — creates a new authorization object; fails if it already exists
@@ -64,6 +73,35 @@ The three fields (`USER`, `PASSWORD`, `SESSION_TOKEN`) map to different provider
 ---
 
 ## Examples
+
+```sql
+-- NOS / OTF: DEFINER TRUSTED (shared service account — all users get same access)
+CREATE AUTHORIZATION mydb.s3_definer_auth
+    AS DEFINER TRUSTED
+    USER     '{AWS_ACCESS_KEY}'
+    PASSWORD '{AWS_SECRET_KEY}';
+
+-- NOS / OTF: INVOKER TRUSTED (per-invoker runtime check)
+CREATE AUTHORIZATION mydb.s3_invoker_auth
+    AS INVOKER TRUSTED
+    USER     '{AWS_ACCESS_KEY}'
+    PASSWORD '{AWS_SECRET_KEY}';
+
+-- How they appear in EXTERNAL SECURITY clauses:
+-- (NOS foreign table)
+CREATE MULTISET FOREIGN TABLE mydb.orders_ft,
+    EXTERNAL SECURITY DEFINER TRUSTED mydb.s3_definer_auth
+    USING ( LOCATION ('/S3/s3.amazonaws.com/my-bucket/') STOREDAS ('PARQUET') )
+NO PRIMARY INDEX;
+
+-- (OTF DATALAKE — catalog and storage can each specify independently)
+CREATE DATALAKE my_lake
+    EXTERNAL SECURITY DEFINER TRUSTED CATALOG mydb.s3_definer_auth,
+    EXTERNAL SECURITY DEFINER TRUSTED STORAGE mydb.s3_definer_auth
+USING catalog_type ('glue') ... TABLE FORMAT iceberg;
+```
+
+### AI Function Authorization (no AS DEFINER/INVOKER)
 
 ```sql
 -- AWS Bedrock (SessionKey optional — omit for long-term credentials)

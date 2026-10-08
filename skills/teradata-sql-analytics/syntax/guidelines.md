@@ -6,6 +6,11 @@ Teradata Vantage has built-in distributed table operators for most analytics, ML
 
 **Before writing any SQL for analytics, transformation, or ML: check this guide and the relevant syntax topic.**
 
+> **This server is reference only — it does not execute SQL.** It serves syntax and native-function
+> documentation; running a query, an EXPLAIN, or any DDL/DML is the job of whatever SQL client or other
+> MCP server you have connected. So the guidance below says *what to run and why*, and never names a tool
+> on this server to run it with.
+
 ---
 
 ## Minimize Data Movement — Critical at Teradata Scale
@@ -87,9 +92,9 @@ SELECT * FROM TD_XGBoost(
 ) AS t;
 ```
 
-**6. Use execute_query with small max_rows for validation only**
+**6. Return rows only to validate, never to process**
 
-`execute_query` is for checking results, previewing schemas, and validating output — not for analytics. Default `max_rows=100` exists for this reason. If you find yourself wanting to increase `max_rows` significantly to "process" data, that is a signal to use a native function instead.
+Fetching rows is for checking results, previewing a schema, and validating output — not for analytics. Cap it small; a hundred rows is plenty. If you find yourself wanting to raise that cap substantially in order to "process" the data, that is the signal to use a native function instead and let the database do the work.
 
 **7. Aggregate before returning — let the database do the grouping**
 
@@ -116,6 +121,33 @@ Native functions distribute across all AMPs. The result set returned to the agen
 ---
 
 ## Common Operations → Native Function Mapping
+
+### Schema & Data Discovery
+
+When users ask about available data — especially external, Iceberg, or datalake sources — use in-database discovery commands and DBC views rather than querying data directly. The table below maps common user intents to the right discovery path and topic.
+
+| User intent | Discovery approach | Topic |
+|-------------|-------------------|-------|
+| "What databases / schemas exist?" | `SELECT DatabaseName FROM DBC.DatabasesV` | `catalog-views` |
+| "What tables are in database X?" | `SELECT TableName, TableKind FROM DBC.TablesV WHERE DatabaseName = 'X'` | `catalog-views` |
+| "What columns does table X have?" | `SELECT ColumnName, ColumnType FROM DBC.ColumnsV WHERE ...` | `catalog-views` |
+| "What Iceberg / Delta Lake / OTF sources are registered?" | `SELECT * FROM DBC.DatalakeInfoV` — if empty, fall back to `HELP DATABASE TD_SERVER_DB` + `HELP FOREIGN SERVER TD_SERVER_DB.<name>` | `catalog-views`, `open-table-format` |
+| "What datalakes are available?" | Same as above — `DBC.DatalakeInfoV` first, then TD_SERVER_DB path | `catalog-views`, `open-table-format` |
+| "What external / foreign servers exist?" | `HELP DATABASE TD_SERVER_DB` — rows with `Kind = 'K'` are foreign servers | `catalog-views` |
+| "What Iceberg tables are in datalake X?" | `HELP DATALAKE X` (known name) — or `HELP FOREIGN SERVER TD_SERVER_DB.X` (unknown name) | `open-table-format`, `catalog-views` |
+| "What tables are in OTF database X.Y?" | `HELP DATABASE X.Y` | `open-table-format` |
+| "What columns does OTF table X.Y.Z have?" | `HELP TABLE X.Y.Z` | `open-table-format` |
+| "What NOS / object-store foreign tables exist?" | `SELECT TableName FROM DBC.TablesV WHERE DatabaseName = 'X' AND TableKind = 'O'` | `catalog-views`, `object-store` |
+| "What QueryGrid foreign servers are there?" | `HELP DATABASE TD_SERVER_DB` — rows with `Kind = 'K'` that are not OTF datalakes | `catalog-views` |
+
+**OTF discovery decision tree:**
+1. Try `DBC.DatalakeInfoV` — lists all registered datalakes when the user has view access.
+2. If empty or access denied, try `HELP DATABASE TD_SERVER_DB` → find `Kind = 'K'` rows → `HELP FOREIGN SERVER TD_SERVER_DB.<name>` for each.
+3. Once a datalake name is known, use `HELP DATALAKE <name>` / `HELP DATABASE <datalake>.<db>` / `HELP TABLE <datalake>.<db>.<table>` to drill in.
+
+Load `get_syntax_help(topic="catalog-views")` for DBC view syntax and the full TD_SERVER_DB workflow. Load `get_syntax_help(topic="open-table-format")` for HELP DATALAKE syntax and OTF DDL/DML.
+
+---
 
 ### Data Exploration & Statistics
 
@@ -203,6 +235,12 @@ Native functions distribute across all AMPs. The result set returned to the agen
 | External approximate nearest neighbor index | `TD_HNSW` / `TD_HNSWPredict` | `vector-search` |
 | External embedding storage type | `VECTOR` / `Vector32` data type | `data-types-casting` |
 
+**Inline NL Query → Embedding → Vector Search:** For RAG retrieval, use the full CTE pipeline pattern — embed the query inline with `AI_TEXTEMBEDDINGS`, normalize with `TD_VectorNormalize(Approach('UNITVECTOR'))`, and search with `TD_VectorDistance` against a pre-built corpus embedding table, all in a single SQL statement. See `vector-search` topic, "Inline NL Query → Embedding → Vector Search Pipeline" section.
+
+**Building a corpus embedding table:** Use the full workflow: source text table → `AI_TEXTEMBEDDINGS` → `TD_VectorNormalize(Approach('UNITVECTOR'))` → CTAS. See `vector-search` topic, "Full Corpus Build Workflow" section.
+
+**Vector dimension introspection:** Use `embedding.LENGTH()` to get the number of dimensions from a VECTOR column — never infer from UDT byte size. `SELECT embedding.LENGTH() AS dims FROM db.table SAMPLE 1;`
+
 ### Statistical Testing
 
 | Instead of this | Use this (native function) | Topic |
@@ -278,16 +316,16 @@ See the `ml-patterns` topic for complete end-to-end ML pipeline examples. See `u
 
 ## Query Validation and Optimization with EXPLAIN
 
-For any non-trivial query, run `explain_query` before executing. Read the plan and optimize if needed — do not just use EXPLAIN for syntax checking.
+For any non-trivial query, run `EXPLAIN` on it before executing. Read the plan and optimize if needed — do not use EXPLAIN merely as a syntax check.
 
 **When to always EXPLAIN first:**
 - Queries joining two or more large tables
 - Queries without a PI-aligned filter (likely full table scan)
 - Queries with subqueries, correlated subqueries, or complex predicates
-- Any query you're about to run with `execute_statement` that modifies data
+- Any statement you are about to run that modifies data (INSERT, UPDATE, DELETE, MERGE, DDL)
 
 **Decision loop:**
-1. Run `explain_query(sql=...)`
+1. Run `EXPLAIN <your statement>`
 2. Scan for red flags (see below) — if found, fix and re-EXPLAIN before executing
 3. Only execute once the plan looks reasonable
 
@@ -312,27 +350,6 @@ For full EXPLAIN interpretation guidance, optimization playbook, and stats colle
 
 ---
 
-## External Data Access
-
-### Open Table Format (OTF) — Iceberg and Delta Lake
-
-For working with Apache Iceberg or Delta Lake tables in external catalogs (Hive, Glue, Unity, REST):
-- Load `get_syntax_help(topic='open-table-format')` before writing any OTF DDL or DML
-- OTF tables use three-tier dot notation: `datalake.database.table`
-- **HELP TABLE, not describe_table:** `DBC.ColumnsV` does not cover OTF tables. Use `HELP TABLE my_lake.db.table;` passed through `execute_query` to inspect OTF table columns
-- **HELP commands are first-class statements:** `HELP DATALAKE`, `HELP DATABASE`, `HELP TABLE` query the external catalog directly — do not rewrite them as SELECT queries against DBC views
-- For CREATE/ALTER/DROP TABLE and DML (INSERT/UPDATE/DELETE) on OTF tables, follow the syntax exactly — OTF has significant restrictions vs. relational SQL
-
-### Native Object Store (NOS) — S3, Azure, GCS
-
-For ad-hoc object store access (READ_NOS), persistent access (CREATE FOREIGN TABLE), or export (WRITE_NOS):
-- Load `get_syntax_help(topic='object-store')` before writing any NOS SQL
-- **HELP TABLE, not describe_table:** `DBC.ColumnsV` does not cover foreign tables. Use `HELP TABLE mydb.foreign_table;` or `READ_NOS(USING ... RETURNTYPE('NOSREAD_SCHEMA'))` to discover schema
-- For import workflows, use the foreign table → CAST view → permanent table pattern documented in the `object-store` topic
-- Collect statistics on payload attributes used in joins or filters to improve query plans against foreign tables
-
----
-
 ## When Manual SQL Is Appropriate
 
 Native functions do not cover everything. Use hand-written SQL for:
@@ -341,7 +358,7 @@ Native functions do not cover everything. Use hand-written SQL for:
 - Date/time arithmetic (`date-time`)
 - CASE expressions and NULL handling (`conditional`)
 - Window functions for lag/lead features, running totals (`window-functions`)
-- Schema discovery via MCP tools first — `list_databases`, `list_tables`, `describe_table` cover the common cases; fall back to manual DBC.* queries only for capabilities not covered by those tools (`catalog-views`)
+- Schema discovery queries against DBC.* views (`catalog-views`)
 - Bit/byte manipulation — `BITAND`, `BITOR`, `BITXOR`, `BITNOT`, `SHIFTLEFT`/`SHIFTRIGHT`, `ROTATELEFT`/`ROTATERIGHT`, `GETBIT`, `SETBIT`, `COUNTSET`, `SUBBITSTR`, `TO_BYTE` — no ANSI equivalents; do not use `&`, `|`, `^`, `~` operators (`bit-byte-functions`)
 - JSON data — native `JSON` type with BSON/UBJSON binary formats; JSONPath extraction; shredding and publishing — all in-database (`json-functions`)
 - One-off computations not covered by any native function

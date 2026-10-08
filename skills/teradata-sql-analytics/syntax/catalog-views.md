@@ -183,3 +183,43 @@ ORDER BY TableName;
 ```
 
 `DBC.StatsV` covers only relational tables. Use `DBC.AllStatsV` when you need a single view across both table types.
+
+---
+
+## Alternate OTF Discovery Path — TD_SERVER_DB and HELP FOREIGN SERVER
+
+`TD_SERVER_DB` is a system database that holds all foreign server registrations, including DATALAKE objects and QueryGrid foreign servers. Use this path when `DBC.DatalakeInfoV` returns no rows or you need to enumerate all foreign servers to find which ones are OTF datalakes.
+
+### Step 1 — List all foreign servers
+
+```sql
+HELP DATABASE TD_SERVER_DB;
+```
+
+Returns a row per object. Rows with `Kind = 'K'` are foreign servers. These can be either QueryGrid foreign servers or DATALAKE objects — the next step distinguishes them.
+
+### Step 2 — Inspect a foreign server
+
+```sql
+HELP FOREIGN SERVER TD_SERVER_DB.<foreign_server_name>;
+```
+
+- If the object is an **OTF DATALAKE**, this returns the databases inside it — equivalent to `HELP DATALAKE <datalake_name>`.
+- If it is a QueryGrid foreign server, the output will reflect that server's structure instead.
+
+### Full discovery workflow
+
+```sql
+-- Step 1: find all foreign server entries
+HELP DATABASE TD_SERVER_DB;
+-- Look for rows where Kind = 'K'
+
+-- Step 2: for each Kind='K' entry, inspect it
+HELP FOREIGN SERVER TD_SERVER_DB.my_lake_name;
+-- If OTF: returns list of databases inside the datalake
+-- Then use HELP DATABASE and HELP TABLE to drill down:
+HELP DATABASE my_lake_name.my_otf_database;
+HELP TABLE my_lake_name.my_otf_database.my_table;
+```
+
+> **When to use this path:** Use `TD_SERVER_DB` + `HELP FOREIGN SERVER` when the user asks about available external data, Iceberg catalogs, or datalake objects and you do not already know the datalake name. Start here to enumerate what exists, then use `HELP DATALAKE` / `HELP DATABASE` / `HELP TABLE` to drill into specifics.

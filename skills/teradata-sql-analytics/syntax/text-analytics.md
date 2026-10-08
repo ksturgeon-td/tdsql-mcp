@@ -449,6 +449,54 @@ SELECT * FROM TD_TextMorph(
 
 ---
 
+## TD_POSTagger — Part-of-Speech Tagging
+
+Assigns a part-of-speech (POS) tag (for example `NN`, `VB`, `JJ`) to each word in the input text. Segments text into sentences, tokenizes each sentence, and applies a CRF-based tagger with Viterbi decoding. Emits one output row per token. English only. Commonly used to produce the `POSTagColumn` input for `TD_TextMorph`.
+
+```sql
+SELECT * FROM TD_POSTagger(
+    ON { db.table | db.view | (query) } AS InputTable PARTITION BY ANY
+    USING
+        TextColumn('text_col')                    -- required; column containing input text
+                                                  -- allowed types: VARCHAR, CHAR, CLOB
+                                                  -- allowed character sets: LATIN or UNICODE
+        InputLanguage('en')                       -- required; 'en' only (English); case-insensitive
+        [ Accumulate('id_col', 'date_col') ]      -- optional; columns or range to pass through
+                                                  -- maximum 2,045 accumulate columns
+        [ IsDebug('false') ]                      -- optional; default 'false'; enables trace diagnostics
+) AS t;
+```
+
+**Output columns** (one row per token):
+
+| Column | Type | Description |
+|--------|------|-------------|
+| accumulate columns | — | Columns copied from input (via `Accumulate`) |
+| `word_sn` | BIGINT | Sequential word index per input row (starts at 1 for each new row) |
+| `word` | VARCHAR(128) | Token text produced by the tokenizer |
+| `pos_tag` | VARCHAR(8) | POS tag string (Penn Treebank style, e.g. `NN`, `VB`, `JJ`) |
+
+> **Notes:**
+> - Input is `PARTITION BY ANY`
+> - English only — `InputLanguage('en')` is the only supported value
+> - Rows where `TextColumn` is NULL or empty are skipped (no tokens emitted)
+> - Contractions and punctuation are split into separate tokens (e.g. `"don't"` → `do`, `n't`; `"Hello,"` → `Hello`, `,`); decimals stay as one token (e.g. `1.60`)
+> - Feed `word` and `pos_tag` into `TD_TextMorph` (via `WordColumn` and `POSTagColumn`) for POS-aware lemmatization
+
+**Example:**
+
+```sql
+SELECT * FROM TD_POSTagger(
+    ON text_inputs AS InputTable PARTITION BY ANY
+    USING
+        TextColumn('txt')
+        InputLanguage('en')
+        Accumulate('[1:2]')
+) AS dt1;
+```
+
+---
+
 ## TD_NERExtractor — Named Entity Recognition
 
 Extracts named entities from text by matching against dictionary terms or
