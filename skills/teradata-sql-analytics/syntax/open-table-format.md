@@ -84,49 +84,87 @@ HELP TABLE my_lake.sales_db.orders;
 
 ### Supported Auth Models
 
-| CSP | Type |
-|---|---|
-| AWS | IAM User Credentials, Assume Role, Lake Formation |
-| Azure | Azure AD Service Principal, Databricks Unity Service Principal |
-| GCP | GCP Service Account, Databricks Unity Service Principal |
+Two AUTHORIZATION objects are required for each DATALAKE: one for the **catalog** connection, one for **storage** access. The same object can be used for both when credentials are shared.
+
+| CSP | Type | Catalog Auth | Storage Auth |
+|---|---|---|---|
+| AWS | IAM User Credentials | Yes | Yes |
+| AWS | Assume Role | Yes | Yes |
+| AWS | Lake Formation | Yes | N/A (catalog-only) |
+| Azure | Azure AD Service Principal | Yes | Yes |
+| Azure | Databricks Unity Service Principal | Yes | N/A (catalog-only) |
+| GCP | Google Cloud Service Account | Yes | Yes |
+| GCP | Databricks Unity Service Principal | Yes | N/A (catalog-only) |
+
+> **Note:** Lake Formation and Databricks Unity Service Principal are catalog-only auth types.
+> They control access to the catalog metadata but do not authenticate against the underlying
+> cloud storage directly. A separate storage auth object is not required for these types.
 
 ---
 
 ## CREATE AUTHORIZATION
 
-Two AUTHORIZATION objects are required for each DATALAKE: one for the catalog connection, one for storage access. The same object can be used for both when credentials are shared.
+For full `CREATE AUTHORIZATION` syntax and field mapping tables (including provider-specific
+`USER` / `PASSWORD` / `SESSION_TOKEN` semantics), load
+`get_syntax_help(topic="authorization-objects")`.
 
-### Simplified Auth (Recommended)
+Place auth objects in a **global database** so they replicate across all CE instances.
+Use plain `CREATE AUTHORIZATION` (no `AS` clause) for DATALAKE objects — the `EXTERNAL SECURITY`
+reference must match: plain auth → no keywords, qualified `db.auth` name allowed.
+
+### AWS — IAM User Credentials
 
 ```sql
-CREATE AUTHORIZATION user1.my_auth
-USER '<access_key_id_or_client_id>'
-PASSWORD '<secret_key_or_client_secret>';
+-- Plain auth: Access Key ID + Secret (SESSION_TOKEN optional — STS only)
+CREATE AUTHORIZATION global_db.aws_iam_auth
+    USER     '<aws_access_key_id>'
+    PASSWORD '<aws_access_key_secret>';
 
--- Grant execute to a specific user
-GRANT EXECUTE ON user1.my_auth TO user2 WITH GRANT OPTION;
-
--- Grant execute at the database level (covers all auth objects in the DB — preferred for roles)
-GRANT EXECUTE ON <db> TO <role_name>;
+GRANT EXECUTE ON global_db TO <role_name>;
 ```
 
-### AWS Assume Role
+### AWS — Assume Role
 
 ```sql
-CREATE AUTHORIZATION assume_role_auth
-USING
-AUTHSERVICETYPE 'ASSUME_ROLE'
-ROLENAME '<IAM_role_ARN>'
-EXTERNALID '<external_id_from_trust_policy>';
+CREATE AUTHORIZATION global_db.aws_role_auth
+    USING AUTHSERVICETYPE 'ASSUME_ROLE'
+    ROLENAME '<arn:aws:iam::account-id:role/role-name>'
+    EXTERNALID '<external_id_from_trust_policy>'
+    DURATION_SECONDS '3600';
+
+GRANT EXECUTE ON global_db TO <role_name>;
 ```
 
-### Azure Active Directory Service Principal
+### Azure — Azure AD Service Principal
 
 ```sql
-CREATE AUTHORIZATION azure_auth
-AS INVOKER TRUSTED
-USER '<azure_ad_service_principal_client_id>'
-PASSWORD '<azure_ad_service_principal_client_secret>';
+-- Storage Account Name (USER) + Storage Account Key (PASSWORD) — Shared Key auth
+CREATE AUTHORIZATION global_db.azure_storage_auth
+    USER     '<storage_account_name>'
+    PASSWORD '<storage_account_key>';
+
+-- Or: Storage Account Name (USER) + Account SAS Token (PASSWORD) — SAS auth
+CREATE AUTHORIZATION global_db.azure_sas_auth
+    USER     '<storage_account_name>'
+    PASSWORD '<account_sas_token>';
+
+GRANT EXECUTE ON global_db TO <role_name>;
+```
+
+### GCP — Google Cloud Service Account
+
+```sql
+-- S3 interop mode: Access Key ID + Secret
+CREATE AUTHORIZATION global_db.gcs_interop_auth
+    USER     '<gcs_hmac_access_key_id>'
+    PASSWORD '<gcs_hmac_access_key_secret>';
+
+-- Native GCS: Client Email + Private Key
+CREATE AUTHORIZATION global_db.gcs_native_auth
+    USER     '<service_account_client_email>'
+    PASSWORD '<service_account_private_key>';
+
+GRANT EXECUTE ON global_db TO <role_name>;
 ```
 
 ---
