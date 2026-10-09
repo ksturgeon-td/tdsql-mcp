@@ -34,9 +34,10 @@ EXTERNALID 'external_id_value'
 
 | Clause | Meaning |
 |--------|---------|
-| `AS DEFINER` | Shared access — usable by multiple users of the database. Can be created in any database. |
-| `AS INVOKER` | **Default.** Exclusive access by the creating user. Must be created in the current user's own database. |
-| `TRUSTED` | Required when the auth object is referenced in an `EXTERNAL SECURITY` clause (CREATE FOREIGN TABLE, CREATE FUNCTION MAPPING). |
+| *(none — plain)* | **Recommended for DATALAKE and foreign tables.** Can be created in any database the creator has `CREATE AUTHORIZATION` on (including global databases). Referenced as `EXTERNAL SECURITY <db>.<auth>` with no keywords. |
+| `AS DEFINER` | Shared access. Auth must be in the **same database** as the referencing object. Referenced as `EXTERNAL SECURITY DEFINER TRUSTED <auth>` (unqualified only — Error 3706 if qualified). |
+| `AS INVOKER` | Exclusive access by the creating user; created in the user's own database. Referenced as `EXTERNAL SECURITY INVOKER TRUSTED <auth>`. |
+| `TRUSTED` | Required **only** when using the `AS DEFINER` or `AS INVOKER` forms in an `EXTERNAL SECURITY` clause. Not needed for plain auth. |
 
 **Form 2 — ASSUME_ROLE:**
 - `AUTHSERVICETYPE` — only supported value is `'ASSUME_ROLE'`
