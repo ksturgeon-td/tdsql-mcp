@@ -60,6 +60,8 @@ HELP TABLE my_lake.sales_db.orders;
 | AWS Glue | `glue` | Yes/Yes | N/A | N/A |
 | Databricks Unity | `unity` | Yes/Yes | Yes/Yes | Yes/Yes |
 | REST (Polaris/Gravitino) | `rest` | Yes/Yes | Yes/Yes | No/No |
+| Microsoft Fabric / OneLake | `fabric` | N/A | Yes/Yes | N/A |
+| GCP BigLake | `biglake` | N/A | N/A | Yes/Yes |
 | Object Store (direct) | — | Yes/No | Yes/No | Yes/No |
 
 ### Delta Lake — Catalog Support (Read/Write)
@@ -68,6 +70,7 @@ HELP TABLE my_lake.sales_db.orders;
 |---|---|---|---|---|
 | AWS Glue | `glue` | Yes/Yes | N/A | N/A |
 | Databricks Unity | `unity` | Yes/Yes | Yes/Yes | Yes/Yes |
+| Microsoft Fabric / OneLake | `fabric` | N/A | Yes/Yes | N/A |
 
 ### Object Storage
 - Amazon S3
@@ -337,7 +340,7 @@ Note: `TABLE FORMAT` cannot be changed with `ALTER DATALAKE`.
 -- List all registered datalakes
 SELECT * FROM DBC.DatalakeInfoV;
 -- Columns: DatalakeName, OTFTableFormat, CatalogType, CatalogLocation,
---          StorageLocation, StorageRegion, UnityCatalogName, StorageAccountName
+--          StorageLocation, StorageEndPoint, StorageRegion, UnityCatalogName, StorageAccountName
 
 -- Server-level view (includes auth metadata)
 SELECT * FROM DBC.ServerV WHERE TableFormat = 'iceberg';
