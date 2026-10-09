@@ -57,21 +57,31 @@ Examples:
 
 ## Authorization
 
-**Authorization object (all platforms):**
+**Plain auth (recommended — works with a qualified `db.auth` reference, no keywords):**
 ```sql
-CREATE AUTHORIZATION myauth
+CREATE AUTHORIZATION mydb.s3_plain_auth
+  USER 'access_key_id'
+  PASSWORD 'secret_key';
+```
+
+**DEFINER TRUSTED (auth must be in same DB as the table; unqualified reference only):**
+```sql
+CREATE AUTHORIZATION mydb.myauth
   AS DEFINER TRUSTED
   USER 'access_key_id'
   PASSWORD 'secret_key';
 ```
 
-**Inline JSON credentials (S3, Azure, GCS):**
-```json
-{"Access_ID":"AKIA...", "Access_Key":"secret...", "Session_Token":"token..."}
+**Inline JSON credentials (S3 and Azure only — no auth object needed):**
 ```
-Session_Token is optional (for temporary STS credentials only).
+'{"Access_ID":"AKIA...", "Access_Key":"secret...", "Session_Token":"token..."}'
+```
+Session_Token is optional (STS temporary credentials only).
 
 For AWS IAM role-based access (instance profile or task role), omit the AUTHORIZATION clause entirely.
+
+See `authorization-objects` topic for the full matching rule: the keywords in `EXTERNAL SECURITY`
+must match how the auth object was created. Mismatch raises Error 6953 or Error 3706.
 
 ---
 
@@ -84,10 +94,14 @@ A foreign table is a persistent, schema-aware virtual table that maps to files i
 ### Syntax
 
 ```sql
+-- Note: CREATE FOREIGN TABLE contacts the bucket at creation time (and may sample files
+-- for schema inference). Credentials and the storage path must be valid and reachable.
+-- An invalid key fails DDL with Error 4951.
 CREATE [MULTISET] FOREIGN TABLE [database_name.]foreign_table_name
 [, FALLBACK]
 [, MAP = map_name]
-[EXTERNAL SECURITY { INVOKER | DEFINER } { TRUSTED | UNTRUSTED } authorization_object]
+[EXTERNAL SECURITY { [database_name.]plain_auth_object
+                   | { INVOKER | DEFINER } { TRUSTED | UNTRUSTED } auth_object }]
 [( column_definitions )]          -- omit for auto-detection
 USING (
   LOCATION         ('/connector/endpoint/bucket/prefix')
@@ -202,6 +216,24 @@ FROM mydb.orders_ft;
 ---
 
 ## CREATE FOREIGN TABLE Examples
+
+### Plain Auth (Recommended)
+
+Plain auth with a qualified reference — auth can be in any accessible database.
+
+```sql
+CREATE AUTHORIZATION mydb.s3_plain_auth
+  USER '<access_key_id>'
+  PASSWORD '<secret_key>';
+
+CREATE MULTISET FOREIGN TABLE mydb.orders_ft,
+  EXTERNAL SECURITY mydb.s3_plain_auth
+  USING (
+    LOCATION ('/S3/s3.amazonaws.com/<bucket>/<prefix>/')
+    STOREDAS ('PARQUET')
+  )
+NO PRIMARY INDEX;
+```
 
 ### JSON — Auto-Discovery
 

@@ -208,9 +208,11 @@ TABLE FORMAT iceberg | deltalake;
 ### Example: AWS Glue — Iceberg
 
 ```sql
+-- Auth in a global database (required on Elastic Compute for cross-instance replication)
+-- Examples use local names for brevity; in production use global_db.my_auth
 CREATE DATALAKE my_iceberg_lake
-EXTERNAL SECURITY CATALOG user1.my_auth,
-EXTERNAL SECURITY STORAGE user1.my_auth
+EXTERNAL SECURITY CATALOG global_db.my_auth,
+EXTERNAL SECURITY STORAGE global_db.my_auth
 USING
     storage_location ('s3://my-bucket/iceberg/')
     storage_region ('us-west-2')
@@ -221,14 +223,15 @@ TABLE FORMAT iceberg;
 ### Example: AWS Glue — Delta Lake (AssumeRole)
 
 ```sql
-CREATE AUTHORIZATION delta_assume_role
+-- Plain ASSUME_ROLE auth — no AS clause; qualified reference in EXTERNAL SECURITY
+CREATE AUTHORIZATION global_db.delta_assume_role
 USING AUTHSERVICETYPE 'ASSUME_ROLE'
 ROLENAME '<IAM_role_ARN>'
 EXTERNALID '<external_id>';
 
 CREATE DATALAKE my_delta_lake
-EXTERNAL SECURITY CATALOG delta_assume_role,
-EXTERNAL SECURITY STORAGE delta_assume_role
+EXTERNAL SECURITY CATALOG global_db.delta_assume_role,
+EXTERNAL SECURITY STORAGE global_db.delta_assume_role
 USING
     catalog_type ('glue')
     storage_location ('s3://my-bucket/delta/')
@@ -339,8 +342,8 @@ Lake Formation enforces fine-grained RBAC (column-level and row-level security).
 ```sql
 -- Replace existing datalake definition (same syntax as CREATE)
 REPLACE DATALAKE my_lake
-EXTERNAL SECURITY CATALOG user1.my_auth,
-EXTERNAL SECURITY STORAGE user1.my_auth
+EXTERNAL SECURITY CATALOG global_db.my_auth,
+EXTERNAL SECURITY STORAGE global_db.my_auth
 USING
     catalog_type ('glue')
     storage_location ('s3://new-bucket/')
@@ -811,7 +814,8 @@ Note: TIME is not supported by Iceberg on Unity catalog.
 ### General
 
 - **No transaction rollback** — manually delete external data files if needed
-- Not supported: `DELETE DATABASE`, `MODIFY DATABASE`, `RENAME TABLE`, `SHOW TABLE` (use `HELP TABLE`), `UPSERT`, `MERGE`, Stored Procedures for OTF DDL/DML, Macros for OTF writes, multi-statement requests
+- Not supported: `DELETE DATABASE`, `MODIFY DATABASE`, `RENAME TABLE`, `UPSERT`, `MERGE`, Stored Procedures for OTF DDL/DML, Macros for OTF writes, multi-statement requests
+- `SHOW TABLE` is **not supported on OTF datalake tables** — use `HELP TABLE` instead. Exception: `SHOW TABLE` works on **alias tables** (returns the alias CREATE syntax) but not on the underlying datalake tables.
 - AWS: `catalog_location` and `storage_location` must be in the same AWS region
 - Write operations are always case-specific (parquet is case-sensitive)
 - No merge-on-read write mode (copy-on-write only for writes)
