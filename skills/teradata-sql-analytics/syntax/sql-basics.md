@@ -11,15 +11,26 @@ FROM   database.table [AS alias]
 ```
 
 ## Row Limiting
+
+### TOP N
 ```sql
 -- First N rows (deterministic only with ORDER BY)
 SELECT TOP 10 * FROM db.table ORDER BY col;
+```
 
--- Random sample
+### SAMPLE
+```sql
 SELECT * FROM db.table SAMPLE 100;          -- 100 random rows
 SELECT * FROM db.table SAMPLE .05;          -- 5% random sample
+```
 
--- Paging (use QUALIFY for ranked pagination)
+> **Warning:** `TOP` and `SAMPLE` cannot be used together in the same query — this raises
+> a syntax error. Use one or the other: `TOP` for ordered/deterministic limits, `SAMPLE`
+> for random row selection.
+
+### Paging
+```sql
+-- Use QUALIFY for ranked pagination
 SELECT *, ROW_NUMBER() OVER (ORDER BY id) AS rn FROM db.table
 QUALIFY rn BETWEEN 101 AND 200;
 ```
