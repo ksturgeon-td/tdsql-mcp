@@ -78,9 +78,10 @@ FROM db.table;
 
 ### Equal-Frequency Bins / Quantile-Based (Manual)
 ```sql
+-- QUANTILE is zero-based (quartile: 0–3, decile: 0–9); NTILE is not supported
 SELECT id, amount,
-       NTILE(4)  OVER (ORDER BY amount) AS quartile,
-       NTILE(10) OVER (ORDER BY amount) AS decile
+       QUANTILE(4,  amount) AS quartile,
+       QUANTILE(10, amount) AS decile
 FROM db.table;
 ```
 

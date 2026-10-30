@@ -30,15 +30,16 @@ CURRENT_TIMESTAMP - INTERVAL '90' MINUTE
 -- Difference between two dates (returns integer days)
 end_date - start_date
 
--- Difference in months
+-- Difference in months (returns a fractional value, not an integer count)
 MONTHS_BETWEEN(end_date, start_date)
 ```
 
 ## Formatting & Casting
 ```sql
--- Date to formatted string
-CAST(order_date AS VARCHAR(10) FORMAT 'YYYY-MM-DD')
-CAST(order_date AS VARCHAR(10) FORMAT 'MM/DD/YYYY')
+-- Date to formatted string: apply FORMAT to the date first, then cast to VARCHAR
+-- CAST(date AS VARCHAR FORMAT '...') fails with Error 3617 — FORMAT must target the date type
+CAST(CAST(order_date AS FORMAT 'YYYY-MM-DD') AS VARCHAR(10))
+CAST(CAST(order_date AS FORMAT 'MM/DD/YYYY') AS VARCHAR(10))
 
 -- String to date
 CAST('2024-01-15' AS DATE FORMAT 'YYYY-MM-DD')
@@ -58,12 +59,15 @@ EXTRACT(HOUR  FROM ts_col)
 
 ## Truncation
 ```sql
--- Truncate to start of month
-CAST(CAST(date_col AS CHAR(7) FORMAT 'YYYY-MM') || '-01' AS DATE FORMAT 'YYYY-MM-DD')
-
--- Or using TD_SYSFNLIB helpers where available
+-- Simplest: TRUNC (verified on Teradata 20.x)
 TRUNC(date_col, 'MM')   -- start of month
 TRUNC(date_col, 'YYYY') -- start of year
+
+-- Arithmetic alternative (no format handling needed)
+date_col - (EXTRACT(DAY FROM date_col) - 1)   -- start of month
+
+-- Format-based method (nested form required — outer CAST to VARCHAR then to DATE)
+CAST(CAST(CAST(date_col AS FORMAT 'YYYY-MM') AS CHAR(7)) || '-01' AS DATE FORMAT 'YYYY-MM-DD')
 ```
 
 ## Day of Week / Week of Year
@@ -71,10 +75,10 @@ TRUNC(date_col, 'YYYY') -- start of year
 -- Day of week: Sunday=1 ... Saturday=7
 ((date_col - DATE '1900-01-07') MOD 7) + 1
 
--- Using TD_DAY_OF_WEEK if available
+-- Using TD_DAY_OF_WEEK (verified on Teradata 20.x)
 TD_DAY_OF_WEEK(date_col)    -- 1=Sunday
 
--- Week number
+-- Week number (not ISO-8601: ISO week 3 may return week 2, etc.)
 TD_WEEK_OF_YEAR(date_col)
 ```
 
@@ -91,7 +95,14 @@ WHERE EXTRACT(YEAR FROM event_date) = EXTRACT(YEAR FROM CURRENT_DATE)
 WHERE event_date BETWEEN DATE '2024-01-01' AND DATE '2024-03-31'
 
 -- Convert Unix epoch (seconds) to timestamp
-CAST(DATE '1970-01-01' AS TIMESTAMP) + INTERVAL '1' SECOND * epoch_col
+TO_TIMESTAMP(epoch_col)   -- simplest; verified on Teradata 20.x (UTC session)
+
+-- Interval fallback: keep each multiplier under 100 to avoid INTERVAL overflow (Error 7453)
+-- INTERVAL '1' SECOND * large_epoch overflows — decompose instead:
+CAST(DATE '1970-01-01' + epoch_col / 86400 AS TIMESTAMP(0))
+  + ((epoch_col MOD 86400) / 3600) * INTERVAL '1' HOUR
+  + ((epoch_col MOD 3600) / 60)   * INTERVAL '1' MINUTE
+  + (epoch_col MOD 60)            * INTERVAL '1' SECOND
 ```
 
 ## Format Tokens
@@ -105,3 +116,6 @@ CAST(DATE '1970-01-01' AS TIMESTAMP) + INTERVAL '1' SECOND * epoch_col
 | `HH` | Hour (00–23) |
 | `MI` | Minute (00–59) |
 | `SS` | Second (00–59) |
+| `B` | Literal space — use `B` not ` ` (a literal space in a FORMAT string is silently dropped) |
+
+> **Note:** A format string cannot repeat a field — `'YYYY/YY'` raises Error 3530.
