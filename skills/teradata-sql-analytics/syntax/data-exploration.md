@@ -53,7 +53,7 @@ SELECT bucket,
        COUNT(*) AS freq
 FROM (
     SELECT amount,
-           NTILE(10) OVER (ORDER BY amount) AS bucket
+           QUANTILE(10, amount) AS bucket    -- zero-based 0–9; NTILE is not supported
     FROM db.table
     WHERE amount IS NOT NULL
 ) t

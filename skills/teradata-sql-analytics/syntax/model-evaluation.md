@@ -36,9 +36,9 @@ SELECT * FROM TD_TrainTestSplit(
 > **SQL alternative:** The Teradata `SAMPLE` clause provides a simpler option for basic random splits without function overhead:
 > ```sql
 > -- 75% train / 25% test using SAMPLE
-> SELECT *, 1 AS TD_IsTrainRow FROM db.table SAMPLE 0.75
+> SELECT t.*, 1 AS TD_IsTrainRow FROM db.table t SAMPLE 0.75
 > UNION ALL
-> SELECT *, 0 AS TD_IsTrainRow FROM db.table SAMPLE 0.25;
+> SELECT t.*, 0 AS TD_IsTrainRow FROM db.table t SAMPLE 0.25;
 > ```
 > Use `TD_TrainTestSplit` when you need stratification, reproducibility via `Seed`, or a tagged output for downstream filtering.
 

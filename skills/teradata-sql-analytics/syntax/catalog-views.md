@@ -12,7 +12,7 @@ ORDER BY DatabaseName;
 -- DBKind: 'D' = database, 'U' = user
 
 -- List users
-SELECT UserName, DefaultDatabase, CreateDate
+SELECT UserName, DefaultDatabase, CreateTimeStamp
 FROM DBC.UsersV
 ORDER BY UserName;
 ```
@@ -24,7 +24,7 @@ SELECT TableName, TableKind, CreateTimeStamp, LastAlterTimeStamp
 FROM DBC.TablesV
 WHERE DatabaseName = 'mydb'
 ORDER BY TableKind, TableName;
--- TableKind: 'T'=table, 'V'=view, 'O'=NoPI table, 'Q'=queue, 'E'=error, 'I'=join index
+-- TableKind: 'T'=table, 'V'=view, 'O'=NoPI table, 'Q'=queue, 'E'=external stored procedure, 'I'=join index, 'K'=foreign server object (DATALAKE)
 
 -- Search for tables by name pattern
 SELECT DatabaseName, TableName, TableKind
@@ -66,15 +66,16 @@ SELECT IndexName, IndexType, UniqueFlag, ColumnName, ColumnPosition
 FROM DBC.IndicesV
 WHERE DatabaseName = 'mydb' AND TableName = 'mytable'
 ORDER BY IndexType, ColumnPosition;
--- IndexType: 'P'=primary, 'S'=secondary, 'U'=unique, 'J'=join index
+-- IndexType: 'P'=primary index, 'Q'=partitioned PI, 'S'=secondary, 'U'=unique constraint, 'J'=join index, 'K'=primary key constraint
+-- Uniqueness is in UniqueFlag ('Y'/'N'), not in IndexType
 ```
 
 ## Table Size & Storage
 ```sql
--- Table sizes in a database (from collected stats — no full scan)
+-- Table sizes in a database (live space accounting — updated on every DML, not from stats)
 SELECT TableName,
-       SUM(CurrentPerm) / 1024 / 1024 AS size_mb,
-       SUM(PeakPerm) / 1024 / 1024 AS peak_mb
+       SUM(CurrentPerm) / 1024.0 / 1024.0 AS size_mb,
+       SUM(PeakPerm) / 1024.0 / 1024.0 AS peak_mb
 FROM DBC.TableSizeV
 WHERE DatabaseName = 'mydb'
 GROUP BY TableName
@@ -92,18 +93,24 @@ ORDER BY used_gb DESC;
 ## Statistics
 ```sql
 -- Collected statistics on a table
-SELECT ColumnName, StatsType, LastCollectTimeStamp, SampleSize
+SELECT ColumnName, StatsType, LastCollectTimeStamp, SampleSizePct
 FROM DBC.StatsV
 WHERE DatabaseName = 'mydb' AND TableName = 'mytable'
 ORDER BY ColumnName;
+-- ColumnName is NULL for multi-column or index stats; StatsType: 'T'=table, 'O'=index
 ```
 
 ## Access Rights
 ```sql
--- What access does the current user have on a database?
+-- Rights of the current user (DBC.UserRightsV is already scoped to the current user — no UserName column)
 SELECT AccessRight, DatabaseName, TableName
 FROM DBC.UserRightsV
-WHERE UserName = USER
+ORDER BY DatabaseName, TableName;
+
+-- Rights of any user (requires SELECT on DBC)
+SELECT AccessRight, UserName, DatabaseName, TableName
+FROM DBC.AllRightsV
+WHERE UserName = 'someuser'
 ORDER BY DatabaseName, TableName;
 ```
 
@@ -159,8 +166,8 @@ ORDER BY DatalakeName;
 -- String values include embedded single quotes, e.g. CatalogType returns 'glue' not glue
 ```
 
-Columns include: `DatalakeName`, `OTFTableFormat` (ICEBERG/DELTA), `CatalogType`
-(hive/glue/unity/rest/fabric/biglake), `CatalogLocation` (catalog URL / AWS region),
+Columns include: `DatalakeName`, `OTFTableFormat` (ICEBERG/DELTALAKE), `CatalogType`
+(hive/glue/unity/rest/fabric/biglake), `CatalogLocation` (catalog endpoint URL — not an AWS region string),
 `StorageLocation`, `StorageEndPoint`, `StorageRegion`, `UnityCatalogName`, `StorageAccountName`.
 
 Once a datalake name is known, get its full DDL (auth names, catalog config):
@@ -179,7 +186,7 @@ SELECT ServerName, DataBaseName, AuthorizationName, AuthorizationType,
 FROM DBC.ServerV
 ORDER BY ServerName;
 -- DataBaseName: the database this server is registered in (usually TD_SERVER_DB)
--- TableFormat: ICEBERG, DELTA, or blank for non-OTF servers
+-- TableFormat: ICEBERG, DELTALAKE, or NULL for non-OTF servers
 -- AuthorizationType: may appear blank on some deployments
 ```
 
@@ -188,20 +195,22 @@ ORDER BY ServerName;
 ### DBC.ManagedOTFTablesV — Managed OTF Tables
 
 ```sql
-SELECT DatalakeName, DatabaseName, TableName, TableFormat,
-       CreateTimeStamp, LastAlterTimeStamp
+SELECT DatalakeName, DatabaseName, TableName, OTFTableFormat,
+       CatalogDBName, CatalogTableName
 FROM DBC.ManagedOTFTablesV
 ORDER BY DatalakeName, DatabaseName, TableName;
+-- No timestamp columns; OTFTableFormat values: ICEBERG, DELTALAKE
 ```
 
 ### DBC.OtfStatsV — OTF Statistics
 
 ```sql
-SELECT DatabaseName, TableName, ColumnName, StatsType,
-       LastCollectTimeStamp, SampleSize
+SELECT CatalogName, TableName, ColumnName, StatsType,
+       LastCollectTimeStamp, SampleSizePct
 FROM DBC.OtfStatsV
-WHERE DatabaseName = 'my_lake'
+WHERE CatalogName = 'my_lake'
 ORDER BY TableName, ColumnName;
+-- Filter on CatalogName (not DatabaseName); SampleSizePct not SampleSize
 ```
 
 ### DBC.AllStatsV — All Statistics (Teradata + OTF)

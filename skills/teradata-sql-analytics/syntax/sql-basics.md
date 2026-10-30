@@ -31,7 +31,9 @@ SELECT * FROM db.table SAMPLE .05;          -- 5% random sample
 ### Paging
 ```sql
 -- Use QUALIFY for ranked pagination
-SELECT *, ROW_NUMBER() OVER (ORDER BY id) AS rn FROM db.table
+-- Note: alias the table so * can be combined with another expression
+SELECT t.*, ROW_NUMBER() OVER (ORDER BY id) AS rn
+FROM db.table t
 QUALIFY rn BETWEEN 101 AND 200;
 ```
 
@@ -45,23 +47,33 @@ FROM db.employees
 QUALIFY rnk <= 3;
 
 -- Deduplicate: keep most recent row per customer
-SELECT *,
+SELECT e.*,
        ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY event_ts DESC) AS rn
-FROM db.events
+FROM db.events e
 QUALIFY rn = 1;
 ```
 
 ## Common Table Expressions (CTEs)
 ```sql
 WITH ranked AS (
-    SELECT *, ROW_NUMBER() OVER (PARTITION BY id ORDER BY ts DESC) AS rn
-    FROM db.events
+    SELECT e.*, ROW_NUMBER() OVER (PARTITION BY id ORDER BY ts DESC) AS rn
+    FROM db.events e
 ),
 latest AS (
     SELECT * FROM ranked WHERE rn = 1
 )
 SELECT * FROM latest WHERE status = 'active';
 ```
+
+> **Gotcha:** In Teradata, `SELECT *` cannot be combined with other expressions in the
+> same select list — this raises Error 3706. Always qualify `*` with a table alias:
+> ```sql
+> -- WRONG: * cannot be mixed with other select items
+> SELECT *, ROW_NUMBER() OVER (ORDER BY id) AS rn FROM db.t;
+>
+> -- RIGHT: qualify * with a table alias
+> SELECT t.*, ROW_NUMBER() OVER (ORDER BY id) AS rn FROM db.t t;
+> ```
 
 ## Joins
 ```sql
@@ -81,7 +93,8 @@ CROSS JOIN ...   -- cartesian product
 UNION     -- distinct rows
 UNION ALL -- all rows (faster)
 INTERSECT
-MINUS     -- Teradata uses MINUS, not EXCEPT
+EXCEPT    -- ANSI keyword; supported in Teradata
+MINUS     -- Teradata synonym for EXCEPT
 ```
 
 ## Subqueries
@@ -131,14 +144,13 @@ CREATE TABLE db.my_table AS (
 
 ### Other DDL reminders
 ```sql
--- Teradata uses MINUS, not EXCEPT (already noted in Set Operations above)
 -- String concatenation: use || (ANSI) or CONCAT() — not +
 -- Semicolons: required in BTEQ; optional in most client tools
 ```
 
 ## Reserved Words as Column Names in Table Operator Clauses
 
-When a column name is a Teradata reserved word (e.g. `type`, `date`, `time`, `value`, `name`, `format`, `title`), it must be double-quoted. In regular SQL projections this looks normal:
+When a column name is a Teradata reserved word (e.g. `type`, `date`, `time`, `value`, `format`, `title`), it must be double-quoted. In regular SQL projections this looks normal:
 
 ```sql
 SELECT "type", "date" FROM db.my_table;
@@ -166,14 +178,17 @@ ResponseColumn('"value"')
 
 **When in doubt, quote it.** Double-quoting a non-reserved word in a string argument is harmless; leaving a reserved word unquoted will cause a parse error.
 
-Common Teradata reserved words that appear as column names: `type`, `date`, `time`, `timestamp`, `value`, `name`, `format`, `title`, `level`, `mode`, `status`, `class`, `key`, `index`, `year`, `month`, `day`, `hour`, `minute`, `second`.
+Words verified as requiring double quotes as column names or aliases:
+`type`, `value`, `format`, `title`, `mode`, `class`, `key`, `date`, `time`,
+`timestamp`, `index`, `year`, `month`, `day`, `hour`, `minute`, `second`.
+
+`name`, `level`, and `status` are accepted unquoted on Teradata 20.x. Quoting them is harmless.
 
 ## Teradata Operator Differences
 
 | Operation | Wrong (MySQL/PostgreSQL) | Correct (Teradata) |
 |-----------|-------------------------|--------------------|
 | Not equal | `!=` | `<>` |
-| Set difference | `EXCEPT` | `MINUS` |
 | String concat | `+` | `\|\|` or `CONCAT()` |
 
 ```sql
@@ -182,53 +197,4 @@ WHERE status != 'active'
 
 -- RIGHT
 WHERE status <> 'active'
-```
-
----
-
-## External Data Access — Notation and SQL
-
-### Three-Tier Dot Notation (OTF Tables)
-
-Open Table Format tables (Iceberg, Delta Lake) use three-tier notation: `datalake.database.table`.
-
-```sql
-SELECT * FROM my_lake.sales_db.orders WHERE order_date >= DATE '2024-01-01';
-
--- Join OTF table with a relational table
-SELECT o.order_id, c.name
-FROM my_lake.sales_db.orders o
-JOIN mydb.customers c ON o.customer_id = c.customer_id;
-```
-
-### HELP Commands — Pass Through as-is
-
-`HELP DATALAKE`, `HELP DATABASE`, and `HELP TABLE` are first-class Teradata statements for OTF and foreign table metadata. Pass them through `execute_query` exactly as written — do NOT rewrite as SELECT queries.
-
-```sql
-HELP DATALAKE my_lake;                    -- list databases in datalake
-HELP DATABASE my_lake.sales_db;           -- list tables in OTF database
-HELP TABLE my_lake.sales_db.orders;       -- describe OTF table columns
-HELP TABLE mydb.my_foreign_table;         -- describe foreign table columns
-```
-
-`describe_table` (which queries `DBC.ColumnsV`) does not work for OTF tables or NOS foreign tables.
-
-### READ_NOS — Two Equivalent Calling Forms
-
-```sql
--- Explicit form — generate this when writing new SQL
-SELECT * FROM READ_NOS (
-  USING
-    LOCATION ('/S3/s3.amazonaws.com/bucket/path/')
-    AUTHORIZATION (my_auth)
-    RETURNTYPE ('NOSREAD_KEYS')
-) AS d;
-
--- Implicit shorthand — valid syntax you may see in existing code; do not "fix" it
-SELECT * FROM (
-  LOCATION='/S3/s3.amazonaws.com/bucket/path/'
-  AUTHORIZATION=my_auth
-  RETURNTYPE='NOSREAD_KEYS'
-) AS d;
 ```

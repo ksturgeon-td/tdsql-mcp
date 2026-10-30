@@ -134,26 +134,21 @@ WHERE col NOT LIKE '%[^0-9]%'   -- adjust pattern as needed
 
 ## Outlier Detection and Handling
 
-### IQR Method (Using NTILE)
+### IQR Method (Using PERCENTILE_CONT)
 ```sql
--- Compute Q1 and Q3 via NTILE
-WITH quartiles AS (
-    SELECT id, amount,
-           NTILE(4) OVER (ORDER BY amount) AS quartile
+-- Compute Q1 and Q3 via PERCENTILE_CONT (NTILE is not supported)
+WITH bounds AS (
+    SELECT
+        PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY amount) AS q1,
+        PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY amount) AS q3
     FROM db.table
     WHERE amount IS NOT NULL
-),
-bounds AS (
-    SELECT
-        MAX(CASE WHEN quartile = 1 THEN amount END) AS q1,
-        MAX(CASE WHEN quartile = 3 THEN amount END) AS q3
-    FROM quartiles
 )
-SELECT q.id, q.amount,
-       CASE WHEN q.amount < b.q1 - 1.5 * (b.q3 - b.q1)
-              OR q.amount > b.q3 + 1.5 * (b.q3 - b.q1)
+SELECT t.id, t.amount,
+       CASE WHEN t.amount < b.q1 - 1.5 * (b.q3 - b.q1)
+              OR t.amount > b.q3 + 1.5 * (b.q3 - b.q1)
             THEN 1 ELSE 0 END AS is_outlier
-FROM quartiles q CROSS JOIN bounds b;
+FROM db.table t CROSS JOIN bounds b;
 ```
 
 ### Z-Score Method
@@ -169,18 +164,14 @@ FROM db.table;
 
 ### Cap Outliers (Winsorization)
 ```sql
--- Cap values at the 1st and 99th percentile using NTILE boundaries
+-- Cap values at the 1st and 99th percentile using PERCENTILE_CONT (NTILE is not supported)
 WITH pct AS (
     SELECT
-        MAX(CASE WHEN pct_rank =  1 THEN amount END) AS p01,
-        MAX(CASE WHEN pct_rank = 99 THEN amount END) AS p99
-    FROM (
-        SELECT amount,
-               NTILE(100) OVER (ORDER BY amount) AS pct_rank
-        FROM db.table WHERE amount IS NOT NULL
-    ) t
+        PERCENTILE_CONT(0.01) WITHIN GROUP (ORDER BY amount) AS p01,
+        PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY amount) AS p99
+    FROM db.table WHERE amount IS NOT NULL
 )
-SELECT id,
+SELECT t.id,
        GREATEST(p.p01, LEAST(p.p99, t.amount)) AS amount_capped
 FROM db.table t CROSS JOIN pct p;
 ```
