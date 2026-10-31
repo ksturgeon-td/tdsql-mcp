@@ -21,7 +21,7 @@ TD_ARIMAFORECAST(
     ART_SPEC(TABLE_NAME(arima_val)),
     FUNC_PARAMS(
         FORECAST_PERIODS(12),
-        PREDICTION_INTERVALS(BOTH)        -- NONE | 80 | 95 | BOTH; default BOTH
+        PREDICTION_INTERVALS(BOTH)        -- NONE | "80" | "95" | BOTH; default BOTH (80/95 must be double-quoted)
     )
 );
 
@@ -36,7 +36,7 @@ SELECT * FROM forecast_art;
 | Parameter | Required | Description |
 |-----------|----------|-------------|
 | `FORECAST_PERIODS` | Yes | Number of future periods to forecast (integer) |
-| `PREDICTION_INTERVALS` | No | Confidence bands: `NONE`, `80`, `95`, or `BOTH` (default `BOTH`) |
+| `PREDICTION_INTERVALS` | No | Confidence bands: `NONE`, `"80"`, `"95"` (double-quoted), or `BOTH` (default `BOTH`) |
 
 ### Output schema (ARTPRIMARY — single layer)
 
@@ -73,7 +73,7 @@ TD_HOLT_WINTERS_FORECASTER(
         FORECAST_PERIODS(12),
         MODEL(ADDITIVE),                          -- required: ADDITIVE | MULTIPLICATIVE
         SEASONAL_PERIODS(4),                      -- number of periods per season
-        PREDICTION_INTERVALS(BOTH),               -- NONE | 80 | 95 | BOTH; default BOTH
+        PREDICTION_INTERVALS(BOTH),               -- NONE | "80" | "95" | BOTH; default BOTH (80/95 must be double-quoted)
         FIT_METRICS(1),
         SELECTION_METRICS(1),
         RESIDUALS(1)
@@ -105,13 +105,13 @@ EXECUTE FUNCTION TD_EXTRACT_RESULTS(
 | Parameter | Required | Description |
 |-----------|----------|-------------|
 | `FORECAST_PERIODS` | Yes | Number of future periods to forecast |
-| `MODEL` | Yes | Seasonal component type: `ADDITIVE` (default) or `MULTIPLICATIVE`; trend is always additive |
+| `MODEL` | Yes | Seasonal component type: `ADDITIVE` or `MULTIPLICATIVE` (no default; omitting it is an error); trend is always additive |
 | `ALPHA` | No | Level smoothing factor (0–1); estimated from data if omitted |
 | `BETA` | No | Trend smoothing factor (0–1); estimated from data if omitted |
 | `GAMMA` | No | Seasonal smoothing factor (0–1); estimated from data if omitted; only applies when `SEASONAL_PERIODS > 1` |
 | `SEASONAL_PERIODS` | No | Number of periods in one seasonal cycle; must be > 1 if GAMMA is specified |
 | `INIT(LEVEL_0, TREND_0, SEASON_0(...))` | No | Initial state values; `SEASON_0(float, float, ...)` requires SEASONAL_PERIODS |
-| `PREDICTION_INTERVALS` | No | `NONE`, `80`, `95`, or `BOTH` (default `BOTH`) |
+| `PREDICTION_INTERVALS` | No | `NONE`, `"80"`, `"95"` (double-quoted), or `BOTH` (default `BOTH`) |
 | `FIT_METRICS` | No | `1` = generate ARTFITMETADATA layer; default `0` |
 | `SELECTION_METRICS` | No | `1` = generate ARTSELMETRICS layer; default `0` |
 | `RESIDUALS` | No | `1` = generate ARTFITRESIDUALS layer; default `0` |
@@ -137,7 +137,7 @@ EXECUTE FUNCTION TD_EXTRACT_RESULTS(
 | `R_SQUARE` | R² goodness-of-fit |
 | `ALPHA`, `BETA`, `GAMMA` | Smoothing parameters used (estimated or supplied) |
 | `ME`, `MAE`, `MSE`, `MAPE` | Error metrics |
-| `FSTAT_CALC`, `NULL_HYPOTH` | F-statistic and hypothesis test result |
+| `FSTAT_CALC`, `NULL_HYPOTH` | F-statistic and hypothesis test result. On 20.00.31.103 the accompanying `P_VALUE` and `F_CRITICAL` were lower-tail values (P_VALUE = 1.0 for F = 190); do not interpret them as upper-tail results |
 
 **ARTSELMETRICS** (requires `SELECTION_METRICS(1)`) — model selection criteria:
 
@@ -176,7 +176,7 @@ TD_MAMEAN(
         FORECAST_PERIODS(8),
         ALGORITHM(MA),                          -- MA | MEAN | NAIVE
         K_ORDER(3),                             -- required for ALGORITHM(MA): window size
-        PREDICTION_INTERVALS(BOTH),             -- NONE | 80 | 95 | BOTH; default BOTH
+        PREDICTION_INTERVALS(BOTH),             -- NONE | "80" | "95" | BOTH; default BOTH (80/95 must be double-quoted)
         FIT_METRICS(1),
         RESIDUALS(1)
     )
@@ -201,7 +201,7 @@ EXECUTE FUNCTION TD_EXTRACT_RESULTS(
 | `FORECAST_PERIODS` | Yes | Number of future periods to forecast (1–32000) |
 | `ALGORITHM` | Yes | `MA` (moving average), `MEAN` (overall mean), `NAIVE` (random walk — last observed value) |
 | `K_ORDER` | If MA | Window size for moving average (1–32000); required when ALGORITHM(MA), ignored otherwise |
-| `PREDICTION_INTERVALS` | No | `NONE`, `80`, `95`, or `BOTH` (default `BOTH`) |
+| `PREDICTION_INTERVALS` | No | `NONE`, `"80"`, `"95"` (double-quoted), or `BOTH` (default `BOTH`) |
 | `FIT_METRICS` | No | `1` = generate ARTFITMETADATA layer; default `0` |
 | `RESIDUALS` | No | `1` = generate ARTFITRESIDUALS layer; default `0` |
 
@@ -230,7 +230,7 @@ EXECUTE FUNCTION TD_EXTRACT_RESULTS(
 | `VAR_COUNT`, `R_SQUARE`, `R_ADJ_SQUARE` | Model structure and fit quality |
 | `STD_ERROR`, `STD_ERROR_DF` | Standard error and degrees of freedom |
 | `ME`, `MSE`, `MAE`, `MPE`, `MAPE` | Error metrics |
-| `FSTAT_CALC`, `P_VALUE`, `NULL_HYPOTH` | Significance test result |
+| `FSTAT_CALC`, `P_VALUE`, `NULL_HYPOTH` | Significance test result. On 20.00.31.103 `NULL_HYPOTH` was returned with a trailing stray character (U+7FFF); compare with `LIKE 'REJECT%'` rather than equality |
 | `NUM_DF`, `DENOM_DF`, `SIGNIFICANCE_LEVEL` | F-test degrees of freedom and significance level |
 | `F_CRITICAL`, `F_CRITICAL_P` | Critical value and corresponding p-value |
 
@@ -253,9 +253,9 @@ TD_SIMPLEEXP(
     ),
     FUNC_PARAMS(
         FORECAST_PERIODS(4),
-        FORECAST_STARTING_VALUE('MEAN'),          -- FIRST (default) | MEAN
+        FORECAST_STARTING_VALUE('MEAN'),          -- FIRST (default) | MEAN (mean of the first 5 observations)
         ALPHA(0.1),                               -- smoothing factor; default 1.0 (no smoothing)
-        PREDICTION_INTERVALS(80),                 -- NONE | 80 | 95 | BOTH; default BOTH
+        PREDICTION_INTERVALS("80"),               -- NONE | "80" | "95" | BOTH; default BOTH (80/95 must be double-quoted)
         FIT_METRICS(1),
         RESIDUALS(1)
     ),
@@ -278,9 +278,9 @@ EXECUTE FUNCTION TD_EXTRACT_RESULTS(
 | Parameter | Required | Description |
 |-----------|----------|-------------|
 | `FORECAST_PERIODS` | Yes | Number of future periods to forecast (1–32000) |
-| `FORECAST_STARTING_VALUE` | No | Initial smoothed value: `FIRST` (default, uses first observation) or `MEAN` (uses series mean) |
+| `FORECAST_STARTING_VALUE` | No | Initial smoothed value: `FIRST` (default, uses first observation) or `MEAN` (mean of the first 5 observations, not the whole series) |
 | `ALPHA` | No | Smoothing factor (float, 0–1); higher values weight recent observations more heavily; default `1.0` (no smoothing — each in-sample forecast equals the prior observation) |
-| `PREDICTION_INTERVALS` | No | `NONE`, `80`, `95`, or `BOTH` (default `BOTH`) |
+| `PREDICTION_INTERVALS` | No | `NONE`, `"80"`, `"95"` (double-quoted), or `BOTH` (default `BOTH`) |
 | `FIT_METRICS` | No | `1` = generate ARTFITMETADATA layer; default `0` |
 | `RESIDUALS` | No | `1` = generate ARTFITRESIDUALS layer; default `0` |
 
@@ -343,7 +343,7 @@ TD_DTW(
 
     FUNC_PARAMS(
         RADIUS(10),                              -- FastDTW search radius (0–1000); default 10
-        DISTANCE(Euclidean),                     -- Euclidean | Manhattan | Binary; default Euclidean
+        DISTANCE('Euclidean'),                   -- 'Euclidean' | 'Manhattan' | 'Binary' (single-quoted); default Euclidean
         WARPPATH(0)                              -- 0=distance only; 1=+integer indices; 2=+original ROW_I; 3=all
     ),
     INPUT_FMT(INPUT_MODE(ONE2ONE))               -- mandatory; ONE2ONE | MANY2ONE | MATCH
@@ -361,8 +361,8 @@ SELECT * FROM dtw_art;
 | Parameter | Required | Description |
 |-----------|----------|-------------|
 | `RADIUS` | No | FastDTW search radius (0–1000); controls the warping window constraint; default `10` |
-| `DISTANCE` | No | Distance metric: `Euclidean` (default), `Manhattan`, or `Binary` |
-| `WARPPATH` | No | Controls warp path output columns (default `0`): `0` = DTW_DISTANCE only; `1` = + WarpX/WarpY (integer warp path indices); `2` = + WarpX_I/WarpY_I (original ROW_I values); `3` = all warp path columns |
+| `DISTANCE` | No | Distance metric: `'Euclidean'` (default), `'Manhattan'`, or `'Binary'` (single-quoted strings) |
+| `WARPPATH` | No | Controls warp path output columns (default `0`): `0` = WarpDistance only; `1` = + WarpX/WarpY (integer warp path indices); `2` = + WarpX_I/WarpY_I (original ROW_I values); `3` = all warp path columns |
 
 ### INPUT_FMT reference
 
@@ -379,6 +379,6 @@ SELECT * FROM dtw_art;
 | Column | Description |
 |--------|-------------|
 | `derived-series-identifier` | From the primary (first) SERIES_SPEC |
-| `DTW_DISTANCE` | Overall DTW distance between the two series |
+| `WarpDistance` | Overall DTW distance between the two series |
 | `WarpX`, `WarpY` | Integer warp path indices; present when WARPPATH ≥ 1 |
 | `WarpX_I`, `WarpY_I` | Original ROW_I values at each warp path step; present when WARPPATH ≥ 2 |
