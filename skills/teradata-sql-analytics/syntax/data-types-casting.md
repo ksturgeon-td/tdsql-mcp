@@ -40,6 +40,8 @@
 ```sql
 CAST(expression AS target_type [FORMAT 'fmt'])
 ```
+> **Note:** `FORMAT` cannot be attached to a character target (Error 3617). To produce a formatted string, apply `FORMAT` to the source type first, then cast to `VARCHAR`/`CHAR`:
+> `CAST(CAST(date_col AS FORMAT 'YYYY-MM-DD') AS VARCHAR(10))`
 
 ## Common Cast Patterns
 ```sql
@@ -54,7 +56,7 @@ CAST('2024-01-15' AS DATE FORMAT 'YYYY-MM-DD')
 CAST('01/15/2024' AS DATE FORMAT 'MM/DD/YYYY')
 CAST(ts_col AS DATE)
 CAST(date_col AS TIMESTAMP)
-CAST(date_col AS VARCHAR(10) FORMAT 'YYYY-MM-DD')
+CAST(CAST(date_col AS FORMAT 'YYYY-MM-DD') AS VARCHAR(10))   -- nested form required; FORMAT on VARCHAR target fails (Error 3617)
 
 -- Timestamp conversions
 CAST('2024-01-15 14:30:00' AS TIMESTAMP FORMAT 'YYYY-MM-DDBHH:MI:SS')
@@ -71,11 +73,11 @@ The `FORMAT` clause controls display and parsing format for dates and numerics:
 FORMAT 'YYYY-MM-DD'
 FORMAT 'MM/DD/YYYY'
 FORMAT 'YYYYMMDD'
-FORMAT 'MMM DD, YYYY'    -- e.g. Jan 15, 2024
+FORMAT 'MMMBDD,BYYYY'    -- e.g. Jan 15, 2024   (B = blank; a literal space in a FORMAT string is silently dropped)
 
 -- Numeric formats
 FORMAT 'ZZZ,ZZ9.99'      -- suppress leading zeros, add comma, 2 decimal places
-FORMAT '999,999,990.00'  -- fixed-width with comma grouping
+FORMAT '999,999,999.99'  -- fixed-width with comma grouping, e.g. 000,001,234.50
 ```
 
 ## TD_ConvertTo — Supported Target Data Types
@@ -91,7 +93,7 @@ Used with the `TD_ConvertTo` function. See `data-cleaning` topic for full syntax
 | `BIGINT` | `BIGINT` |
 | `REAL` | `REAL` |
 | `DECIMAL` | `DECIMAL(total_digits, precision)` — up to 38 total digits, 19 precision |
-| `DATE` | `DATE FORMAT 'YYYY/MM/DD'` |
+| `DATE` | `DATE` (inherits the system default date format) |
 | `TIME` | `TIME(6)` |
 | `TIMESTAMP` | `TIMESTAMP(6)` |
 | `TIME WITH ZONE` | `TIME(6) WITH ZONE` |
@@ -232,6 +234,6 @@ GROUP BY 1;
 ## Implicit Conversion Gotchas
 - `CHAR` comparisons pad with spaces: `'abc' = 'abc   '` is TRUE
 - Date arithmetic returns `INTEGER` (number of days): `end_date - start_date`
-- Mixing `CHAR` and `VARCHAR` in UNION requires explicit CAST
-- `NULL` comparisons: always use `IS NULL` / `IS NOT NULL`, never `= NULL`
+- Each branch of a `UNION` must reference a table; a branch without a `FROM` clause fails with Error 3888
+- `NULL` comparisons: always use `IS NULL` / `IS NOT NULL`, never `= NULL` (raises Error 3731)
 

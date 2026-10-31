@@ -43,7 +43,7 @@ FROM db.table;
 
 -- Forward-fill: carry last non-NULL value forward (time-ordered)
 SELECT id, dt,
-       LAST_VALUE(value IGNORE NULLS) OVER (
+       LAST_VALUE("value" IGNORE NULLS) OVER (
            PARTITION BY id ORDER BY dt
            ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
        ) AS value_ffill
@@ -119,14 +119,15 @@ SELECT OREPLACE(OREPLACE(col, '-', ''), ' ', '') AS col_stripped FROM db.table;
 ### Validate Format
 ```sql
 -- Flag values that don't match an expected pattern
+-- LIKE supports only % and _ wildcards; use REGEXP_SIMILAR for character classes
 SELECT col,
-       CASE WHEN col LIKE '[0-9][0-9][0-9]-[0-9][0-9][0-9][0-9]'
+       CASE WHEN REGEXP_SIMILAR(col, '^[0-9]{3}-[0-9]{4}$') = 1
             THEN 'valid' ELSE 'invalid' END AS phone_check
 FROM db.table;
 
 -- Find non-numeric values in a column that should be numeric
 SELECT col FROM db.table
-WHERE col NOT LIKE '%[^0-9]%'   -- adjust pattern as needed
+WHERE REGEXP_SIMILAR(col, '^[0-9]+$') = 0
    OR col IS NULL;
 ```
 
@@ -134,26 +135,21 @@ WHERE col NOT LIKE '%[^0-9]%'   -- adjust pattern as needed
 
 ## Outlier Detection and Handling
 
-### IQR Method (Using NTILE)
+### IQR Method (Using PERCENTILE_CONT)
 ```sql
--- Compute Q1 and Q3 via NTILE
-WITH quartiles AS (
-    SELECT id, amount,
-           NTILE(4) OVER (ORDER BY amount) AS quartile
+-- Compute Q1 and Q3 via PERCENTILE_CONT (NTILE is not supported)
+WITH bounds AS (
+    SELECT
+        PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY amount) AS q1,
+        PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY amount) AS q3
     FROM db.table
     WHERE amount IS NOT NULL
-),
-bounds AS (
-    SELECT
-        MAX(CASE WHEN quartile = 1 THEN amount END) AS q1,
-        MAX(CASE WHEN quartile = 3 THEN amount END) AS q3
-    FROM quartiles
 )
-SELECT q.id, q.amount,
-       CASE WHEN q.amount < b.q1 - 1.5 * (b.q3 - b.q1)
-              OR q.amount > b.q3 + 1.5 * (b.q3 - b.q1)
+SELECT t.id, t.amount,
+       CASE WHEN t.amount < b.q1 - 1.5 * (b.q3 - b.q1)
+              OR t.amount > b.q3 + 1.5 * (b.q3 - b.q1)
             THEN 1 ELSE 0 END AS is_outlier
-FROM quartiles q CROSS JOIN bounds b;
+FROM db.table t CROSS JOIN bounds b;
 ```
 
 ### Z-Score Method
@@ -169,18 +165,14 @@ FROM db.table;
 
 ### Cap Outliers (Winsorization)
 ```sql
--- Cap values at the 1st and 99th percentile using NTILE boundaries
+-- Cap values at the 1st and 99th percentile using PERCENTILE_CONT (NTILE is not supported)
 WITH pct AS (
     SELECT
-        MAX(CASE WHEN pct_rank =  1 THEN amount END) AS p01,
-        MAX(CASE WHEN pct_rank = 99 THEN amount END) AS p99
-    FROM (
-        SELECT amount,
-               NTILE(100) OVER (ORDER BY amount) AS pct_rank
-        FROM db.table WHERE amount IS NOT NULL
-    ) t
+        PERCENTILE_CONT(0.01) WITHIN GROUP (ORDER BY amount) AS p01,
+        PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY amount) AS p99
+    FROM db.table WHERE amount IS NOT NULL
 )
-SELECT id,
+SELECT t.id,
        GREATEST(p.p01, LEAST(p.p99, t.amount)) AS amount_capped
 FROM db.table t CROSS JOIN pct p;
 ```
@@ -191,10 +183,10 @@ FROM db.table t CROSS JOIN pct p;
 
 ### Safe Casting Patterns
 ```sql
--- Cast with fallback for bad values
-SELECT CASE WHEN col (VARCHAR(20)) LIKE '%[^0-9.]%'
-            THEN NULL
-            ELSE CAST(col AS DECIMAL(18,2))
+-- Cast with fallback for bad values (CASE short-circuits; bad values never reach the cast)
+SELECT CASE WHEN REGEXP_SIMILAR(col, '^[0-9]+(\.[0-9]+)?$') = 1
+            THEN CAST(col (VARCHAR(20)) AS DECIMAL(18,2))
+            ELSE NULL
        END AS col_numeric
 FROM db.table;
 
@@ -233,21 +225,17 @@ Identifies columns that provide no analytical value. Futile column types:
 - **Unstructured text** — free-text with no reusable pattern
 
 ```sql
--- Basic usage
+-- CategoryTable is required (the function fails with Error 7810 without it)
 SELECT * FROM TD_GetFutileColumns(
-    ON { db.table | db.view | (query) } AS InputTable PARTITION BY ANY
+    ON db.table AS InputTable PARTITION BY ANY
+    ON (SELECT * FROM TD_CategoricalSummary(
+            ON db.table AS InputTable
+            USING TargetColumns('col1', 'col2')) AS cat_sum) AS CategoryTable DIMENSION
     USING
+        CategoricalSummaryColumn('ColumnName')        -- required with CategoryTable; default 'ColumnName'
         ThresholdValue(0.95)                          -- optional: 0-1, default 0.95
 ) AS t;
-
--- With CategoryTable: pass output of TD_CategoricalSummary for richer detection
-SELECT * FROM TD_GetFutileColumns(
-    ON { db.table | db.view | (query) } AS InputTable PARTITION BY ANY
-    ON { db.cat_summary | (SELECT * FROM TD_CategoricalSummary(...)) } AS CategoryTable DIMENSION
-    USING
-        CategoricalSummaryColumn('ColumnName')        -- optional: column from CategoryTable, default 'ColumnName'
-        ThresholdValue(0.95)                          -- optional: default 0.95
-) AS t;
+-- Note: avoid 'cs' as the nested query alias — it is a reserved word
 ```
 
 ---
@@ -451,7 +439,7 @@ SELECT * FROM Unpack(
         OutputDataTypes('INTEGER', 'VARCHAR')
         Delimiter(',')
         Regex('.*:(.*)')                              -- pattern to extract values after 'col_name:'
-        RegexSet('1')                                 -- optional: which capture group holds the value
+        RegexSet(1)                                   -- optional: capture group number; integer, not quoted string
                                                       -- default: last group; max: 30
 ) AS t;
 ```
@@ -494,7 +482,8 @@ SELECT * FROM StringSimilarity(
 --   'cosine'       — Cosine similarity
 --   'soundexcode'  — English soundex match (1=match, 0=no match, -1=non-English char)
 -- Output column default: sim_i (where i = sequence number of the pair)
--- Similarity scores in [0,1]; distance measures (LD, LDWS, OSA, DL, hamming, LCS) return integers
+-- All types return scores in [0,1], including LD, LDWS, OSA, DL, and LCS (normalized, not integer edit distances)
+-- Exceptions: hamming returns -1 for strings of unequal length; soundexcode returns 1 or 0
 ```
 
 ---

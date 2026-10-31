@@ -46,19 +46,23 @@ ORDER BY freq DESC;
 
 ## Histogram (Manual Bucketing)
 ```sql
+-- Equal-frequency histogram with 10 buckets (QUANTILE is zero-based, 0-9; some buckets can be empty)
+SELECT bucket, MIN(amount) AS bucket_min, MAX(amount) AS bucket_max, COUNT(*) AS freq
+FROM (SELECT amount, QUANTILE(10, amount) AS bucket FROM db.table WHERE amount IS NOT NULL) t
+GROUP BY bucket ORDER BY bucket;
+
 -- Equal-width histogram with 10 buckets
-SELECT bucket,
-       MIN(amount) AS bucket_min,
-       MAX(amount) AS bucket_max,
-       COUNT(*) AS freq
+SELECT bucket, MIN(amount) AS bucket_min, MAX(amount) AS bucket_max, COUNT(*) AS freq
 FROM (
     SELECT amount,
-           NTILE(10) OVER (ORDER BY amount) AS bucket
+           CASE WHEN amount = MAX(amount) OVER () THEN 9
+                ELSE CAST(FLOOR((amount - MIN(amount) OVER ())
+                         / NULLIFZERO(CAST(MAX(amount) OVER () - MIN(amount) OVER () AS FLOAT) / 10)) AS INTEGER)
+           END AS bucket
     FROM db.table
     WHERE amount IS NOT NULL
 ) t
-GROUP BY bucket
-ORDER BY bucket;
+GROUP BY bucket ORDER BY bucket;
 
 -- Fixed-width buckets
 SELECT
@@ -90,11 +94,11 @@ SELECT * FROM db.table SAMPLE 1000;
 -- Percentage
 SELECT * FROM db.table SAMPLE .01;   -- 1%
 
--- Repeatable random sample (seed not directly available — use HASH for stability)
+-- Repeatable sample: the hash filter alone returns the same ~5% of rows on every run
 SELECT * FROM db.table
-WHERE (HASHBUCKET(HASHROW(id)) MOD 100) < 5   -- ~5% stable sample
-ORDER BY id
-SAMPLE 1000;
+WHERE (HASHBUCKET(HASHROW(id)) MOD 100) < 5
+ORDER BY id;
+-- Do not add SAMPLE n: it re-randomizes the result whenever the filter returns more than n rows.
 ```
 
 ## Schema Exploration
@@ -117,11 +121,18 @@ FROM DBC.ColumnsV
 WHERE ColumnName LIKE '%customer%'
 ORDER BY DatabaseName, TableName;
 
--- Row counts from system stats (approximate, no full scan)
-SELECT DatabaseName, TableName, LastCollectTimeStamp, SumPerm / 1024 / 1024 AS size_mb
+-- Row counts from collected statistics (as of the last collection; only tables with stats appear)
+SELECT DatabaseName, TableName, RowCount, LastCollectTimeStamp
+FROM DBC.StatsV
+WHERE DatabaseName = 'mydb' AND ColumnName IS NULL
+ORDER BY RowCount DESC;
+
+-- Table sizes in a database
+SELECT TableName, CAST(SUM(CurrentPerm) / (1024.0 * 1024.0) AS DECIMAL(18,3)) AS size_mb
 FROM DBC.TableSizeV
 WHERE DatabaseName = 'mydb'
-ORDER BY SumPerm DESC;
+GROUP BY TableName
+ORDER BY 2 DESC;
 ```
 
 ## MovingAverage
@@ -157,6 +168,10 @@ SELECT * FROM MovingAverage(
 --   'S' = Simple       (uses WindowSize, IncludeFirst)
 --   'T' = Triangular   (uses WindowSize, IncludeFirst)
 --   'W' = Weighted     (uses WindowSize, IncludeFirst)
+-- Output column is named <target>_smavg (simple) or <target>_emavg (exponential)
+-- S and W drop the first WindowSize-1 rows of each partition by default;
+-- pass IncludeFirst('true') to keep them (NULLs where no full window exists).
+-- M, T, and C return all rows without this option.
 ```
 
 ## TD_CategoricalSummary
@@ -222,6 +237,7 @@ SELECT * FROM TD_Histogram(
     USING
         MethodType('Variable-Width')
         TargetColumn('amount')
+        NBins(2)                                      -- required: number of bins defined in the MinMax table
 ) AS t;
 
 -- MinMax table schema for Equal-Width:    (ColumnName, MinValue, MaxValue)
@@ -253,6 +269,8 @@ SELECT * FROM TD_QQNorm(
 ```
 
 ## TD_UnivariateStatistics
+Output columns: `ATTRIBUTE`, `StatName`, `StatValue`. Full statistic names are used (e.g. `STANDARD DEVIATION`).
+`StatValue` for STD is the **sample** standard deviation. With `PartitionColumns` there is one set of rows per partition.
 ```sql
 -- Default: computes all statistics
 SELECT * FROM TD_UnivariateStatistics(
@@ -271,7 +289,8 @@ SELECT * FROM TD_UnivariateStatistics(
         TargetColumns('col1', 'col2')
         PartitionColumns('group_col')                 -- optional: stats per group
         Stats('MEAN', 'STD', 'MEDIAN', 'IQR',
-              'PERCENTILES', 'SKEWNESS', 'KURTOSIS')  -- default: 'ALL'
+              'PERCENTILES', 'SKEWNESS', 'KURTOSIS',
+              'TRIMMED MEAN')                         -- required when TrimPercentile is used; default: 'ALL'
         Centiles(10, 25, 50, 75, 90)                  -- optional: used with PERCENTILES or ALL
                                                       -- default: 1,5,10,25,50,75,90,95,99
         TrimPercentile(20)                            -- optional: used with TRIMMED MEAN or ALL

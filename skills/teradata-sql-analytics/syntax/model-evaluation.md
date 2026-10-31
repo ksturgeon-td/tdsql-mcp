@@ -33,12 +33,15 @@ SELECT * FROM TD_TrainTestSplit(
 | `TD_IsTrainRow` | BYTEINT | `1` = train row, `0` = test row |
 | `<all input columns>` | same as input | All columns copied from InputTable |
 
-> **SQL alternative:** The Teradata `SAMPLE` clause provides a simpler option for basic random splits without function overhead:
+> **SQL alternative:** Teradata's `SAMPLE` clause supports a one-pass disjoint split via `SAMPLEID`. `SAMPLE` is not allowed inside a `UNION ALL` (error 5475), and two independent samples would overlap anyway.
 > ```sql
-> -- 75% train / 25% test using SAMPLE
-> SELECT *, 1 AS TD_IsTrainRow FROM db.table SAMPLE 0.75
-> UNION ALL
-> SELECT *, 0 AS TD_IsTrainRow FROM db.table SAMPLE 0.25;
+> -- 75% train / 25% test: one pass, disjoint and complete (not repeatable; use TD_TrainTestSplit with Seed for that)
+> SELECT id, col1, col2,
+>        CASE WHEN sid = 1 THEN 1 ELSE 0 END AS TD_IsTrainRow
+> FROM (SELECT id, col1, col2, SAMPLEID AS sid
+>       FROM db.table
+>       SAMPLE 0.75, 0.25) a;
+> -- SAMPLEID must be a plain select item in the inner query; it cannot sit inside CASE alongside SAMPLE.
 > ```
 > Use `TD_TrainTestSplit` when you need stratification, reproducibility via `Seed`, or a tagged output for downstream filtering.
 
@@ -68,7 +71,7 @@ SELECT * FROM TD_ClassificationEvaluator(
 | `SeqNum` | INTEGER | Row sequence number |
 | `Prediction` | VARCHAR | Predicted label for this row |
 | `Mapping` | VARCHAR | Label mapping used |
-| `Class_N` | BIGINT | One column per label — confusion matrix counts |
+| `CLASS_1`, `CLASS_2`, ... | BIGINT | One column per label (uppercase) — confusion matrix counts |
 | `Precision` | REAL | Positive predictive value: TP / (TP + FP) |
 | `Recall` | REAL | Sensitivity: TP / (TP + FN) |
 | `F1` | REAL | Harmonic mean of Precision and Recall |
@@ -94,9 +97,10 @@ SELECT * FROM TD_RegressionEvaluator(
     USING
         ObservationColumn('actual_col')              -- required; actual observed values
         PredictionColumn('predicted_col')            -- required; model predicted values
-        [ Metrics('MAE'[,'MSE','RMSE',...]) ]        -- optional; default: all metrics returned
-        [ NumOfIndependentVariables(n) ]             -- required with AR2; ignored otherwise
-        [ DegreesOfFreedom(df1, df2) ]               -- required with FSTAT; ignored otherwise
+        [ Metrics('MAE'[,'MSE','RMSE',...]) ]        -- optional; default: all metrics, which includes AR2 and FSTAT
+        [ NumOfIndependentVariables(n) ]             -- required with AR2, including the default (all metrics)
+        [ DegreesOfFreedom(df1, df2) ]               -- required with FSTAT, including the default (all metrics)
+                                                     -- supply both, or list Metrics explicitly without AR2 and FSTAT
 ) AS t;
 ```
 
@@ -124,10 +128,10 @@ SELECT * FROM TD_RegressionEvaluator(
 | Column | Type | Description |
 |--------|------|-------------|
 | `<metric_name>` | FLOAT | One column per metric specified in `Metrics` |
-| `F_score` | FLOAT | [FSTAT only] F-test statistic |
-| `F_Criticalvalue` | FLOAT | [FSTAT only] Critical F value at alpha=95% |
-| `P_value` | FLOAT | [FSTAT only] Probability value associated with F_score |
-| `F_conclusion` | VARCHAR | [FSTAT only] `'reject null hypothesis'` or `'fail to reject null hypothesis'` |
+| `F_SCORE` | FLOAT | [FSTAT only] F-test statistic |
+| `F_CRITICALVALUE` | FLOAT | [FSTAT only] Critical F value at alpha=95% |
+| `P_VALUE` | FLOAT | [FSTAT only] Probability value associated with F_SCORE |
+| `F_CONCLUSION` | VARCHAR | [FSTAT only] `'Reject null hypothesis'` or `'Fail to reject null hypothesis'` |
 
 ---
 
@@ -145,21 +149,26 @@ SELECT * FROM TD_ROC(
         [ ModelIDColumn('model_id_col') ]            -- optional; evaluate multiple models/partitions in one call
         [ PositiveLabel('1') ]                       -- default 1; positive class label
         [ NumThresholds(50) ]                        -- default 50; range [1, 10000]; uniformly distributed [0, 1]
-        [ AUC('false') ]                             -- default false; append AUC column to output
-        [ Gini('false') ]                            -- default false; append Gini coefficient column to output
+        [ AUC('false') ]                             -- default false; append AUC column (and GINI) to output
+        [ Gini('false') ]                            -- GINI was also returned when only AUC('true') was set
 ) AS t;
 ```
 
-**Output columns** (per-threshold ROC curve, written to OUT TABLE):
+**OUT TABLE** (per-threshold ROC curve — one row per threshold):
 
 | Column | Type | Description |
 |--------|------|-------------|
-| `Model_id` | varies | Model/partition identifier; only present when `ModelIDColumn` specified |
-| `Threshold` | REAL | Classification threshold value |
-| `TPR` | REAL | True Positive Rate at this threshold: correctly predicted positives / total positives |
-| `FPR` | REAL | False Positive Rate at this threshold: incorrectly predicted positives / total negatives |
-| `AUC` | REAL | Area under the ROC curve; only present when `AUC('true')` |
-| `GINI` | REAL | Gini coefficient; only present when `Gini('true')`; 0 = equal, closer to 1 = more unequal |
+| `threshold_value` | REAL | Classification threshold value |
+| `tpr` | REAL | True Positive Rate at this threshold: correctly predicted positives / total positives |
+| `fpr` | REAL | False Positive Rate at this threshold: incorrectly predicted positives / total negatives |
+
+**Primary result** (when `AUC('true')` or `Gini('true')` — one row per model):
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `<model_id_col>` | varies | Model identifier; keeps the input column's name (not `Model_id`); only present when `ModelIDColumn` specified |
+| `AUC` | REAL | Area under the ROC curve |
+| `GINI` | REAL | Gini coefficient (2 × AUC − 1) |
 
 ---
 
@@ -181,28 +190,30 @@ SELECT * FROM TD_Silhouette(
 ) AS t;
 ```
 
+Output column names are lowercase and follow your input column names (e.g. `cluster_id`, `id`, `silhouette_score`).
+
 **Output — `SCORE` (default)** — single overall score:
 
 | Column | Type | Description |
 |--------|------|-------------|
-| `Silhouette_Score` | REAL | Mean Silhouette Coefficient across all samples; range [-1, 1]; higher = better-defined clusters |
+| `silhouette_score` | REAL | Mean Silhouette Coefficient across all samples; range [-1, 1]; higher = better-defined clusters |
 
 **Output — `CLUSTER_SCORES`** — one row per cluster:
 
 | Column | Type | Description |
 |--------|------|-------------|
-| `clusterid_column` | BYTEINT/SMALLINT/INTEGER/BIGINT | Cluster identifier |
-| `Silhouette_Score` | REAL | Mean silhouette score for this cluster |
+| `<clusterid_column>` | BYTEINT/SMALLINT/INTEGER/BIGINT | Cluster identifier (keeps input column name, lowercase) |
+| `silhouette_score` | REAL | Mean silhouette score for this cluster |
 
 **Output — `SAMPLE_SCORES`** — one row per input point:
 
 | Column | Type | Description |
 |--------|------|-------------|
-| `id_column` | any | Row identifier |
-| `clusterid_column` | BYTEINT/SMALLINT/INTEGER/BIGINT | Cluster assigned to this point |
-| `A_i` | REAL | Mean distance to other points in the same cluster |
-| `B_i` | REAL | Minimum mean distance to points in any other cluster |
-| `Silhouette_Score` | REAL | Score for this point: (B_i - A_i) / max(A_i, B_i) |
+| `<id_column>` | any | Row identifier (keeps input column name, lowercase) |
+| `<clusterid_column>` | BYTEINT/SMALLINT/INTEGER/BIGINT | Cluster assigned to this point |
+| `a_i` | REAL | Mean distance to other points in the same cluster |
+| `b_i` | REAL | Minimum mean distance to points in any other cluster |
+| `silhouette_score` | REAL | Score for this point: (b_i - a_i) / max(a_i, b_i) |
 | `accumulate_column(s)` | any | Columns copied from InputTable |
 
 ---
@@ -237,10 +248,10 @@ SELECT * FROM TD_SHAP(
 
 | Column | Type | Description |
 |--------|------|-------------|
-| `id` | INTEGER | Row identifier |
-| `accumulate_column(s)` | any | Columns copied from InputTable |
-| `<input_columns>` | DOUBLE PRECISION | SHAP value per feature — contribution to prediction |
-| `label` | INTEGER | [Classification only] Class label |
+| `id` | INTEGER | Row identifier (named after IDColumn) |
+| `TD_<input_column>_SHAP` | DOUBLE PRECISION | SHAP value per feature (e.g. `TD_x_SHAP`); one column per input column |
+| `accumulate_column(s)` | any | Columns copied from InputTable; returned after the SHAP columns |
+| `label` | INTEGER | [Classification only] Class label; not present for binary classification in testing (multiclass not tested) |
 | `tree_num` | VARCHAR | [When `Detailed('true')`, tree models only] task_index + tree_num; `'Final'` = aggregated |
 | `iter_num` | INTEGER | [When `Detailed('true')`, TD_XGBoost only] Iteration number |
 
@@ -248,5 +259,5 @@ SELECT * FROM TD_SHAP(
 
 | Column | Type | Description |
 |--------|------|-------------|
-| `<input_columns>` | DOUBLE PRECISION | Mean absolute SHAP value per feature — global feature importance |
-| `label` | INTEGER | [TD_DecisionForest / TD_XGBoost classification only] Class label |
+| `TD_<input_column>_SHAP` | DOUBLE PRECISION | Mean absolute SHAP value per feature — one column per input column (e.g. `TD_x_SHAP`) |
+| `label` | INTEGER | [TD_DecisionForest / TD_XGBoost classification] Class label; not present for binary classification in testing (multiclass not tested) |

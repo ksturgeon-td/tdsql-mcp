@@ -29,7 +29,11 @@ NULLIFZERO(expr)        -- Teradata shorthand: 0 → NULL
 COALESCE(preferred_email, work_email, personal_email)
 NULLIF(status, 'N/A')                       -- treat 'N/A' as NULL
 revenue / NULLIFZERO(units)                 -- safe division
-SUM(ZEROIFNULL(adjustment)) + base_amount   -- null-safe sum
+-- null-safe sum: base_amount must be in GROUP BY (added once per group)
+SELECT base_amount, SUM(ZEROIFNULL(adjustment)) + base_amount AS total
+FROM db.t GROUP BY base_amount;
+-- Or add base_amount inside the SUM (added once per row):
+-- SUM(ZEROIFNULL(adjustment) + base_amount)
 ```
 
 ## IIF / Inline IF
@@ -66,20 +70,24 @@ WHERE event_date BETWEEN DATE '2024-01-01' AND DATE '2024-12-31'
 
 ## Conditional Aggregation
 ```sql
--- Count rows meeting a condition
-SUM(CASE WHEN type = 'credit' THEN 1 ELSE 0 END) AS credit_count
+-- Count rows meeting a condition (type and month are reserved words — must be quoted)
+SUM(CASE WHEN "type" = 'credit' THEN 1 ELSE 0 END) AS credit_count
 
 -- Conditional sum
 SUM(CASE WHEN region = 'North' THEN amount ELSE 0 END) AS north_total
 
 -- Pivot pattern: turn row values into columns
-SUM(CASE WHEN month = 1 THEN amount END) AS jan,
-SUM(CASE WHEN month = 2 THEN amount END) AS feb,
-SUM(CASE WHEN month = 3 THEN amount END) AS mar
+SUM(CASE WHEN "month" = 1 THEN amount END) AS jan,
+SUM(CASE WHEN "month" = 2 THEN amount END) AS feb,
+SUM(CASE WHEN "month" = 3 THEN amount END) AS mar
 ```
 
 ## GREATEST / LEAST
 ```sql
-GREATEST(a, b, c)   -- maximum of the values (ignores NULLs if any non-NULL present)
-LEAST(a, b, c)      -- minimum of the values
+GREATEST(a, b, c)   -- maximum of the values; returns NULL if ANY argument is NULL
+LEAST(a, b, c)      -- minimum of the values; returns NULL if ANY argument is NULL
+
+-- To ignore NULLs, fill each NULL from the others (NULL only if all are NULL):
+GREATEST(COALESCE(a, b, c), COALESCE(b, a, c), COALESCE(c, a, b))
+LEAST(COALESCE(a, b, c), COALESCE(b, a, c), COALESCE(c, a, b))
 ```

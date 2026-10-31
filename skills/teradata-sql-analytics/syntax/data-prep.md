@@ -18,7 +18,8 @@ SELECT * FROM Antiselect(
 ### Min-Max Scaling (0 to 1)
 ```sql
 SELECT col,
-       (col - MIN(col) OVER ()) / NULLIFZERO(MAX(col) OVER () - MIN(col) OVER ()) AS col_minmax
+       -- CAST divisor to FLOAT: integer columns would otherwise return only 0 or 1
+       (col - MIN(col) OVER ()) / NULLIFZERO(CAST(MAX(col) OVER () - MIN(col) OVER () AS FLOAT)) AS col_minmax
 FROM db.table;
 ```
 
@@ -45,7 +46,7 @@ SELECT * FROM TD_VectorNormalize(
         [ Accumulate({ 'col' | col_range }[,...]) ]       -- optional; columns to pass through
         [ Approach('UNITVECTOR'|'FRACTION'|'PERCENTAGE'|'INDEX') ]  -- default 'UNITVECTOR'
         [ BaseColumn('base_col') ]                        -- required with INDEX; per-row denominator column
-        [ BaseValue('base_value') ]                       -- required with INDEX; scalar denominator value
+        [ BaseValue(base_value) ]                         -- required with INDEX; a numeric value, not a quoted string
 ) AS t;
 ```
 
@@ -56,7 +57,7 @@ SELECT * FROM TD_VectorNormalize(
 | `UNITVECTOR` (default) | `x / L2_norm(row)` | Normalize to unit length; required before cosine similarity or HNSW indexing |
 | `FRACTION` | `x / sum(row)` | Each value as a fraction of the row total |
 | `PERCENTAGE` | `x / sum(row) * 100` | Each value as a percentage of the row total |
-| `INDEX` | `(x - B) / V` | Normalize relative to a base; `B` from `BaseColumn`, `V` from `BaseValue` |
+| `INDEX` | `(x - B) / V` | Normalize relative to a base; `B` from `BaseColumn`, `V` from `BaseValue`. **Raised internal error 3610 (crash code 3650) on Teradata 20.00.30.76 in testing — use with caution** |
 
 > **Embedding pre-processing:** use `Approach('UNITVECTOR')` with a `VECTOR` column before storing embeddings or building an HNSW index. Unit-normalized vectors enable cosine similarity via dot product. See `vector-search` topic.
 
@@ -78,9 +79,10 @@ FROM db.table;
 
 ### Equal-Frequency Bins / Quantile-Based (Manual)
 ```sql
+-- QUANTILE is zero-based (quartile: 0–3, decile: 0–9); NTILE is not supported
 SELECT id, amount,
-       NTILE(4)  OVER (ORDER BY amount) AS quartile,
-       NTILE(10) OVER (ORDER BY amount) AS decile
+       QUANTILE(4,  amount) AS quartile,
+       QUANTILE(10, amount) AS decile
 FROM db.table;
 ```
 
@@ -118,7 +120,7 @@ See the Fit/Transform function section below.
 
 ### Unpivot (Wide → Long) — Manual
 ```sql
-SELECT id, 'jan' AS month, jan_sales AS sales FROM db.t
+SELECT id, 'jan' AS sales_month, jan_sales AS sales FROM db.t
 UNION ALL
 SELECT id, 'feb', feb_sales FROM db.t
 UNION ALL
@@ -166,9 +168,9 @@ SELECT * FROM TD_Unpivoting(
 ### Pivot (Long → Wide) — Manual
 ```sql
 SELECT id,
-       SUM(CASE WHEN month = 'jan' THEN sales END) AS jan,
-       SUM(CASE WHEN month = 'feb' THEN sales END) AS feb,
-       SUM(CASE WHEN month = 'mar' THEN sales END) AS mar
+       SUM(CASE WHEN "month" = 'jan' THEN sales END) AS jan,
+       SUM(CASE WHEN "month" = 'feb' THEN sales END) AS feb,
+       SUM(CASE WHEN "month" = 'mar' THEN sales END) AS mar
 FROM db.long_table
 GROUP BY id;
 ```
@@ -176,20 +178,20 @@ GROUP BY id;
 ### TD_Pivoting (Long → Wide)
 ```sql
 -- Mode 1: PivotColumn — a column contains the pivot keys (most common)
+-- No ORDER BY in this mode (error: "InputTable do not support Order BY clause")
 SELECT * FROM TD_Pivoting(
     ON { db.table | db.view | (query) } AS InputTable
         PARTITION BY id_col
-        ORDER BY category_col
     USING
         PartitionColumns('id_col')                    -- must match PARTITION BY; list or range
         TargetColumns('value_col')                    -- columns to pivot; list or range
         PivotColumn('category_col')                   -- column whose values become new column headers
         PivotKeys('A', 'B', 'C')                      -- which values to pivot (others ignored)
-        PivotKeysAlias('cat_a', 'cat_b', 'cat_c')     -- optional: rename pivot key output columns
+        PivotKeysAlias('cat_a', 'cat_b', 'cat_c')     -- output cols: value_col_cat_a, value_col_cat_b, ...
         DefaultPivotValues('0', '0', '0')             -- optional: fill value when pivot key is absent
         Accumulate('name_col')                        -- optional: pass-through cols; list or range
-        OutputColumnNames('id', 'name', 'cat_a',
-                          'cat_b', 'cat_c')           -- optional: rename all output columns
+        -- Alternative to PivotKeysAlias (do not use both):
+        -- OutputColumnNames('cat_a', 'cat_b', 'cat_c')  -- one name per target col × pivot key
 ) AS t;
 
 -- Mode 2: RowsPerPartition — no pivot key column; spread N rows into N columns
@@ -205,6 +207,7 @@ SELECT * FROM TD_Pivoting(
                                                       -- NULLs added if partition has fewer rows
                                                       -- extra rows omitted if partition has more
 ) AS t;
+-- Output columns: value_col_0, value_col_1, ... value_col_(N-1)  (zero-based index)
 
 -- Mode 3: Aggregation only — no RowsPerPartition or PivotColumn
 SELECT * FROM TD_Pivoting(
@@ -217,11 +220,15 @@ SELECT * FROM TD_Pivoting(
         -- or per-column: Aggregation('amount:SUM', 'quantity:MAX')
         -- options: CONCAT, UNIQUE_CONCAT, SUM, MIN, MAX, AVG
 ) AS t;
+-- Output columns for SUM/MIN/MAX/AVG: value_col_Combined
+-- Output columns for CONCAT/UNIQUE_CONCAT: target_col_Combined
 
 -- CONCAT/UNIQUE_CONCAT additional options
+-- ORDER BY is required for CONCAT and UNIQUE_CONCAT (error 7810 without it)
 SELECT * FROM TD_Pivoting(
     ON { db.table | db.view | (query) } AS InputTable
         PARTITION BY id_col
+        ORDER BY seq_col                              -- required for CONCAT and UNIQUE_CONCAT
     USING
         PartitionColumns('id_col')                    -- list or range
         TargetColumns('tag_col')                      -- list or range
@@ -250,6 +257,7 @@ SELECT * FROM TD_RandomProjectionMinComponents(
                                                       -- higher value = more distortion, fewer components
                                                       -- default: 0.1
 ) AS t;
+-- Output column: randomprojection_mincomponents
 -- Pass the output value as NumComponents in TD_RandomProjectionFit
 ```
 
@@ -297,27 +305,28 @@ SELECT * FROM TD_ColumnTransformer(
 
 ### Lag / Lead Features (Time Series)
 ```sql
-SELECT id, dt, value,
-       LAG(value, 1)  OVER (PARTITION BY id ORDER BY dt) AS value_lag1,
-       LAG(value, 7)  OVER (PARTITION BY id ORDER BY dt) AS value_lag7,
-       LEAD(value, 1) OVER (PARTITION BY id ORDER BY dt) AS value_next
+SELECT id, dt, "value",
+       LAG("value", 1)  OVER (PARTITION BY id ORDER BY dt) AS value_lag1,
+       LAG("value", 7)  OVER (PARTITION BY id ORDER BY dt) AS value_lag7,
+       LEAD("value", 1) OVER (PARTITION BY id ORDER BY dt) AS value_next
 FROM db.timeseries;
 ```
 
 ### Rolling Statistics
 ```sql
-SELECT id, dt, value,
-       AVG(value)         OVER (PARTITION BY id ORDER BY dt ROWS BETWEEN 6  PRECEDING AND CURRENT ROW) AS rolling_7d_avg,
-       STDDEV_SAMP(value) OVER (PARTITION BY id ORDER BY dt ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rolling_30d_std
+SELECT id, dt, "value",
+       AVG("value")         OVER (PARTITION BY id ORDER BY dt ROWS BETWEEN 6  PRECEDING AND CURRENT ROW) AS rolling_7row_avg,   -- 7 rows = 7 days only with 1 row/day
+       STDDEV_SAMP("value") OVER (PARTITION BY id ORDER BY dt ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rolling_30row_std
 FROM db.timeseries;
 ```
 
 ### Ratio / Interaction Features
 ```sql
 SELECT id,
-       revenue / NULLIFZERO(visits)        AS revenue_per_visit,
-       clicks  / NULLIFZERO(impressions)   AS ctr,
-       (revenue - cost) / NULLIFZERO(cost) AS roi
+       -- CAST divisor to FLOAT: integer columns truncate to 0 without it
+       revenue / NULLIFZERO(CAST(visits AS FLOAT))        AS revenue_per_visit,
+       clicks  / NULLIFZERO(CAST(impressions AS FLOAT))   AS ctr,
+       (revenue - cost) / NULLIFZERO(CAST(cost AS FLOAT)) AS roi
 FROM db.campaign;
 ```
 
@@ -357,7 +366,7 @@ SELECT * FROM TD_SMOTE(
 SELECT * FROM db.training_table
 UNION ALL
 SELECT * FROM TD_SMOTE(
-    ON db.training_table PARTITION BY ANY
+    ON db.training_table AS InputTable PARTITION BY ANY
     USING
         IDColumn('id')
         ResponseColumn('label')
@@ -383,7 +392,7 @@ SMOTE-NC requires an `EncodingsTable` produced by `TD_OrdinalEncodingFit` and a 
 -- Step 1: build encodings table for categorical columns (Approach AUTO, no DefaultValue)
 CREATE TABLE db.smote_encodings AS (
     SELECT * FROM TD_OrdinalEncodingFit(
-        ON db.training_table PARTITION BY ANY
+        ON db.training_table AS InputTable PARTITION BY ANY
         USING
             TargetColumn('cat_col1', 'cat_col2')
             Approach('AUTO')
@@ -407,7 +416,7 @@ SELECT StatValue AS MedianValue FROM TD_UnivariateStatistics(
 
 -- Step 3: run TD_SMOTE with smotenc
 SELECT * FROM TD_SMOTE(
-    ON db.training_table PARTITION BY ANY
+    ON db.training_table AS InputTable PARTITION BY ANY
     ON db.smote_encodings AS EncodingsTable DIMENSION
     USING
         IDColumn('id')
@@ -421,7 +430,7 @@ SELECT * FROM TD_SMOTE(
 ) AS t;
 ```
 
-> **smotenc restrictions:** Column aliasing is not allowed on `InputTable` or `EncodingsTable`. `EncodingsTable` must be a real table (no subquery); produce it from `TD_OrdinalEncodingFit` with `Approach('AUTO')` and **no** `DefaultValue` argument.
+> **smotenc restrictions:** Column aliasing is not allowed on `InputTable` or `EncodingsTable`. A simple `SELECT *` subquery was accepted for `EncodingsTable` in testing; produce it from `TD_OrdinalEncodingFit` with `Approach('AUTO')` and **no** `DefaultValue` argument.
 
 ---
 
@@ -540,7 +549,7 @@ SELECT * FROM TD_NonLinearCombineFit(
 --   Formula('Y = ABS(X0)')               — absolute value
 --   Formula('Y = LN(X1) * X2')           — log of col2 multiplied by col3
 --   Formula('Y = SQRT(X0 * X1)')         — square root of product
---   Formula('Y = X0 / NULLIFZERO(X1)')   — safe division
+-- NULLIFZERO is not supported inside Formula (Error 7810)
 
 SELECT * FROM TD_NonLinearCombineTransform(
     ON { db.table | db.view | (query) } AS InputTable PARTITION BY ANY
@@ -588,6 +597,8 @@ SELECT * FROM TD_OneHotEncodingFit(
         TargetColumn('gender', 'region')              -- explicit columns or range
         Approach('AUTO')
         CategoryCounts(2, 4)                          -- required with AUTO: one count per target column
+                                                      -- AUTO names output columns by index (cat_col1_0, cat_col1_1, ...)
+                                                      -- not by category value; which category gets which index is unspecified
         OtherColumnName('other_gender', 'other_region') -- optional: one per target column
 ) AS t;
 
@@ -691,10 +702,10 @@ SELECT * FROM TD_PolynomialFeaturesFit(
                                                       -- default: 'false'
 ) AS t;
 
--- Example output for TargetColumns('x','y'), Degree(2), IncludeBias('true'):
---   1, x, y, x^2, xy, y^2
+-- Example output columns for TargetColumns('x','y'), Degree(2), IncludeBias('true'):
+--   ONE, x, x_y, x_SQUARE, y, y_SQUARE      (x=2, y=3 gives 1, 2, 6, 4, 3, 9)
 -- With InteractionOnly('true'):
---   1, x, y, xy
+--   ONE, x, x_y, y
 
 SELECT * FROM TD_PolynomialFeaturesTransform(
     ON { db.table | db.view | (query) } AS InputTable PARTITION BY ANY
@@ -723,8 +734,10 @@ SELECT * FROM TD_RandomProjectionFit(
     OUT VOLATILE TABLE OutputTable(my_rp_model)       -- optional; PERMANENT or VOLATILE
     USING
         TargetColumns('col1', 'col2', 'col3')         -- required; explicit columns or range
-        NumComponents(10)                             -- required: target number of dimensions
-                                                      -- use TD_RandomProjectionMinComponents to find minimum
+        NumComponents(n)                              -- required: target number of dimensions
+                                                      -- must be fewer than the number of TargetColumns AND
+                                                      -- at least the TD_RandomProjectionMinComponents value
+                                                      -- for the same Epsilon; intended for wide tables
         Seed(42)                                      -- optional: non-negative integer for reproducibility
                                                       -- default: non-deterministic
         Epsilon(0.1)                                  -- optional: distortion tolerance, range (0,1)
@@ -795,11 +808,12 @@ SELECT * FROM TD_ScaleFit(
     USING
         TargetColumns('col1', 'col2', 'col3')         -- required for dense; explicit columns or range
         ScaleMethod('STD')                            -- required; one method for all cols, or one per col
+                                                      -- STD uses population std dev; USTD uses sample std dev (unbiased)
                                                       -- options: MEAN, SUM, USTD, STD, RANGE,
                                                       --          MIDRANGE, MAXABS,
-                                                      --          RESCALE({lb=0,ub=1})
-                                                      --          RESCALE({lb=0})  — lower bound only
-                                                      --          RESCALE({ub=1})  — upper bound only
+                                                      --          RESCALE(lb=0,ub=1)   — verified: (60-10)/110=0.4545
+                                                      --          RESCALE(lb=0)        — lower bound only (not tested)
+                                                      --          RESCALE(ub=1)        — upper bound only (not tested)
         MissValue('KEEP')                             -- optional: KEEP (default), ZERO, LOCATION
         GlobalScale('false')                          -- optional: scale all cols together; default 'false'
         Multiplier('1')                               -- optional: one or one per col; default 1
@@ -876,6 +890,11 @@ SELECT * FROM TD_ScaleTransform(
 ### TD_TargetEncodingFit / TD_TargetEncodingTransform
 
 ```sql
+-- CategoryTable is required (the function fails with Error 7810 without it).
+-- Schema: exactly 2 columns —
+--   ColumnName    CHAR/VARCHAR (up to 128 chars, LATIN or UNICODE) — target column name
+--   CategoryCount BYTEINT/SMALLINT/INTEGER/BIGINT                  — number of categories
+
 -- CBM_BETA: binary classification (response values are 0 or 1)
 SELECT * FROM TD_TargetEncodingFit(
     ON { db.table | db.view | (query) } AS InputTable

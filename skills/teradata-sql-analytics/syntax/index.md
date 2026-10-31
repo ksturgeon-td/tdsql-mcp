@@ -23,8 +23,6 @@ Use `get_syntax_help(topic="<name>")` to load any topic below.
 |-------|-------------|
 | `string-functions` | Character manipulation: SUBSTR, INDEX, OREPLACE, TRIM, etc. |
 | `numeric-functions` | Math and numeric functions: ROUND, MOD, LOG, ABS, etc. |
-| `bit-byte-functions` | Bit/byte manipulation: BITAND, BITOR, BITXOR, BITNOT, SHIFTLEFT/RIGHT, ROTATELEFT/RIGHT, GETBIT, SETBIT, COUNTSET, SUBBITSTR, TO_BYTE |
-| `json-functions` | JSON data type, DDL, storage formats (text/BSON/UBJSON), extraction (JSONExtractValue, JSONExtract, dot notation, JSONPath), validation, publishing (JSON_AGG, JSON_COMPOSE, JSON_PUBLISH), shredding (INSERT JSON, JSON_TABLE, TD_JSONSHRED, JSON_SHRED_BATCH), inspection, and conversion |
 | `date-time` | Date/time literals, arithmetic, formatting, EXTRACT |
 | `aggregate-functions` | GROUP BY, COUNT, SUM, AVG, percentiles, GROUPING SETS |
 | `window-functions` | ROW_NUMBER, RANK, LAG/LEAD, running totals, QUALIFY |
@@ -38,10 +36,10 @@ Use `get_syntax_help(topic="<name>")` to load any topic below.
 | `data-cleaning` | NULL handling, deduplication, string cleaning, outlier detection, type validation |
 | `data-prep` | Feature engineering: binning, encoding, scaling, pivoting, polynomial features, dimensionality reduction, Fit/Transform pairs, TD_SMOTE oversampling |
 | `utility-functions` | TD_FillRowID, TD_NumApply, TD_RoundColumns, TD_StrApply |
-| `text-analytics` | Text tokenization, classification, tagging, and entity extraction: TD_NgramSplitter, TD_TextParser, TD_TextTagger, TD_TFIDF, TD_SentimentExtractor, TD_WordEmbeddings, TD_NaiveBayesTextClassifier, TD_TextMorph, TD_POSTagger, TD_NERExtractor |
+| `text-analytics` | Text tokenization, classification, and entity extraction: TD_NgramSplitter, TD_NaiveBayesTextClassifier, TD_NERExtractor |
 | `hypothesis-testing` | Statistical hypothesis tests: TD_ANOVA, TD_ChiSq, TD_FTest, TD_ZTest |
 | `association-analysis` | Frequent itemset mining and collaborative filtering: TD_Apriori, TD_CFilter |
-| `path-analysis` | Event sequence analysis: Attribution, Sessionize, nPath, TD_PathSummarizer |
+| `path-analysis` | Event sequence analysis: Attribution, Sessionize, nPath |
 | `model-evaluation` | Model evaluation and explainability: TD_TrainTestSplit, TD_ClassificationEvaluator, TD_RegressionEvaluator, TD_ROC, TD_Silhouette, TD_SHAP |
 | `ml-patterns` | End-to-end ML pipeline patterns: CTE prediction pipeline, elbow method, train/evaluate/retrain loop, class imbalance workflow, micromodeling |
 | `vector-search` | Vector similarity search: TD_VectorDistance (exact), TD_HNSW/TD_HNSWPredict (approximate), KMeans IVF pattern |
@@ -64,12 +62,6 @@ Use `get_syntax_help(topic="<name>")` to load any topic below.
 | Topic | Description |
 |-------|-------------|
 | `geospatial` | ST_Geometry, MBR/MBB types, WKT/WKB formats, spatial relationships (ST_Within, ST_Contains, ST_Distance, etc.), geospatial indexes, tessellation, AggGeom, GeometryToRows, PolygonSplit, MGRS conversion, SYSSPATIAL metadata |
-
-## External Data
-| Topic | Description |
-|-------|-------------|
-| `open-table-format` | Iceberg v2 and Delta Lake v3 via external catalogs (Hive/Glue/Unity/REST): CREATE DATALAKE, three-tier `datalake.db.table` notation, SELECT/DML, time travel, metadata functions (TD_SNAPSHOTS, TD_MANIFESTS, TD_PARTITIONS, TD_HISTORY), CREATE/ALTER/DROP TABLE, COLLECT STATS, type mappings, limitations |
-| `object-store` | Native Object Store (NOS): CREATE FOREIGN TABLE for persistent access, READ_NOS for ad-hoc reads and schema discovery, WRITE_NOS for export to S3/Azure/GCS; Parquet/CSV/JSON formats; PATHPATTERN partition pruning; SNAPSHOT_LOCATION; import workflow; best practices |
 
 ## Reference
 | Topic | Description |
@@ -100,10 +92,6 @@ Recommended topic reading order for common end-to-end tasks. Load these topics i
 | **Micromodeling (per-segment models)** | `ml-functions` (TD_GLM) → `ml-patterns` (micromodeling) |
 | **Semantic search / RAG embeddings** | `authorization-objects` → `llm-providers` → `embeddings` → `vector-search` |
 | **In-database ONNX inference** | `byom-model-loading` → `embeddings` (ONNXEmbeddings) → `vector-search` |
-| **Discover available Iceberg / Delta Lake / OTF sources** | `catalog-views` (DBC.DatalakeInfoV + TD_SERVER_DB section) → `open-table-format` |
-| **Query Iceberg / Delta Lake tables** | `open-table-format` |
-| **Import NOS data into Vantage** | `object-store` (foreign table → CAST view → permanent table) |
-| **Export Vantage data to S3/Azure/GCS** | `object-store` (WRITE_NOS) |
 | **Time series forecasting (ARIMA)** | `uaf-concepts` → `uaf-data-prep` → `uaf-estimation` → `uaf-forecasting` → `uaf-diagnostics` |
 | **Regression on ordered series** | `uaf-concepts` → `uaf-data-prep` → `uaf-estimation` (TD_LINEAR_REGR / TD_MULTIVAR_REGR) → `uaf-diagnostics` |
 | **Frequency / spectral analysis** | `uaf-concepts` → `uaf-dsp` (TD_DFFT, TD_POWERSPEC, TD_LINESPEC) |

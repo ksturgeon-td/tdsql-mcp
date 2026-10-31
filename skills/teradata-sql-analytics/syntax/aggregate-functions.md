@@ -24,24 +24,24 @@ VAR_SAMP(col)          -- sample variance
 -- Exact (sorts all data — can be slow on large sets)
 PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY col)    -- median
 PERCENTILE_DISC(0.25) WITHIN GROUP (ORDER BY col)   -- 25th percentile (discrete)
-
--- Approximate (fast, uses HLL sketch — Vantage)
-APPROX_PERCENTILE(col, 0.5)
-APPROX_PERCENTILE(col, 0.95)
+-- No native approximate percentile function found on Teradata 20.00.30.76.
 ```
 
-## Approximate Count Distinct
+## Distinct Count
 ```sql
--- HyperLogLog-based — much faster than COUNT(DISTINCT) on large data
-APPROX_COUNT_DISTINCT(col)
+COUNT(DISTINCT col)
+-- No native APPROX_COUNT_DISTINCT found on Teradata 20.00.30.76.
 ```
 
 ## String Aggregation
 ```sql
--- Concatenate values into one string (XML-based, common pattern)
-XMLAGG(XMLELEMENT(NAME x, col || ',') ORDER BY col)
-
--- Cleaner alternative using TD_SYSFNLIB.XMLAGG or custom UDF
+-- Concatenate values into one delimited string: aggregate, cast, and trim the trailing comma
+-- Note: wrapping with XMLELEMENT keeps XML tags in output — use TRIM + CAST instead
+SELECT dept,
+       TRIM(TRAILING ',' FROM CAST(XMLAGG(TRIM(col) || ',' ORDER BY col) AS VARCHAR(1000))) AS vals
+FROM db.t
+GROUP BY dept;
+-- LISTAGG and STRING_AGG are not available on Teradata 20.00.30.76.
 ```
 
 ## GROUP BY Variants
@@ -52,9 +52,11 @@ SELECT dept, SUM(salary) FROM db.t GROUP BY dept;
 -- Multiple grouping sets in one pass
 GROUP BY GROUPING SETS ((dept), (region), (dept, region), ())
 
--- Equivalent shorthand
+-- CUBE produces the same result as the four-set GROUPING SETS example above
+GROUP BY CUBE(dept, region)     -- all combinations + grand total
+
+-- ROLLUP is smaller: (dept, region), (dept), and the grand total () only
 GROUP BY ROLLUP(dept, region)   -- all prefixes + grand total
-GROUP BY CUBE(dept, region)     -- all combinations
 
 -- Identify which grouping a row belongs to
 GROUPING(dept)     -- 1 if dept is aggregated away, 0 if not
@@ -77,7 +79,7 @@ SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) AS active_count
 AVG(NULLIFZERO(amount))
 
 -- Max of a filtered subset
-MAX(CASE WHEN category = 'A' THEN value END)
+MAX(CASE WHEN category = 'A' THEN "value" END)   -- value is a reserved word; must be quoted
 ```
 
 ## Common Patterns
