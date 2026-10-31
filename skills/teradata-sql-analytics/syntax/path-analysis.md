@@ -45,9 +45,11 @@ CREATE TABLE excluded_events (excluding_event VARCHAR);
 CREATE TABLE optional_events (optional_event VARCHAR);
 
 -- FirstModelTable / SecondModelTable: model type and distribution
+-- The model column must be LATIN. A UNICODE column (e.g. a derived table of literals) fails
+-- with error 9854. Use CHARACTER SET LATIN explicitly, or TRANSLATE when building from a query.
 CREATE TABLE model_table (
-    id     INTEGER,   -- row number starting at 0
-    model  VARCHAR    -- row 0: model type; rows 1+: distribution spec
+    id     INTEGER,                        -- row number starting at 0
+    model  VARCHAR(60) CHARACTER SET LATIN -- row 0: model type; rows 1+: distribution spec
 );
 ```
 
@@ -84,11 +86,9 @@ CREATE TABLE model_table (
 
 | Column | Type | Description |
 |--------|------|-------------|
-| `user_id` | INTEGER/VARCHAR | User/entity identifier |
-| `event` | VARCHAR | Event that received attribution credit |
-| `time_stamp` | TIMESTAMP | Event timestamp |
-| `attribution` | DOUBLE | Fraction of conversion credit attributed to this event |
-| `time_to_conversion` | INTEGER | Elapsed time between this event and the conversion event |
+| *(all input columns)* | same as input | Every input column returned under its own name (e.g. `userid`, `event_time`, `ev`) |
+| `attribution` | FLOAT | Fraction of conversion credit for this event; `NULL` on the conversion event itself |
+| `time_to_conversion` | FLOAT | Seconds relative to the conversion event: negative for earlier events (e.g. `-180` = 3 minutes before); `NULL` on the conversion event. Events after the conversion are not returned; users with no conversion produce no rows. |
 
 **Example — EVENT_REGULAR model (email + impression):**
 
@@ -132,11 +132,10 @@ SELECT * FROM SESSIONIZE(
                                                  -- integer types are treated as milliseconds
         TimeOut(1800.0)                          -- required; DOUBLE PRECISION seconds of inactivity
                                                  -- that define a session boundary
-        [ ClickLag(0.2) ]                        -- optional; DOUBLE PRECISION minimum seconds between
-                                                 -- events for the entity to be considered legitimate
-                                                 -- (not a bot/automated process); sessions where any
-                                                 -- gap is below this threshold are excluded
-                                                 -- default: no sessions excluded
+        [ ClickLag(0.2) ]                        -- optional; DOUBLE PRECISION seconds. Adds a CLICKLAG
+                                                 -- column: 't' for events whose gap from the previous
+                                                 -- event is below this value, 'f' otherwise. Rows are
+                                                 -- NOT removed — filter on CLICKLAG to drop bot-like activity.
         [ EmitNull('false') ]                    -- optional; default 'false'
                                                  -- 'true' — include rows where time_col is NULL
                                                  --          (sessionid and clicklag will be NULL)
@@ -148,15 +147,15 @@ SELECT * FROM SESSIONIZE(
 | Column | Type | Description |
 |--------|------|-------------|
 | *(all input columns)* | same as input | Every input column is copied to output |
-| `sessionid` | INTEGER/BIGINT | Session identifier assigned by the function |
-| `clicklag` | BYTEINT | `1` if the gap between this event and the previous exceeded `ClickLag`; `0` otherwise |
+| `SESSIONID` | INTEGER | Session identifier; restarts at 0 for each partition entity (combine with entity column for a unique key); starts at -1 when `TimeColumn` is an integer type |
+| `CLICKLAG` | CHAR(1) | Present only when `ClickLag` is specified: `'t'` if the gap before this event is below `ClickLag`, `'f'` otherwise |
 
 > **Notes:**
 > - No `AS` alias on the `ON` clause
 > - `TimeColumn` value must also appear in `ORDER BY`
 > - No input column may be named `sessionid` or `clicklag` — these are reserved output column names
 > - `PARTITION BY` defines the entity whose events are sessionized — commonly user ID, but equally applicable to device ID, customer ID, machine ID, or any other grouping
-> - `ClickLag` is useful for filtering automated or bot-like activity; any entity whose inter-event gaps fall below the threshold is excluded entirely
+> - `ClickLag` adds a `CLICKLAG CHAR(1)` column flagging events whose gap from the previous event is below the threshold (`'t'`/`'f'`); rows are not removed — apply a `WHERE CLICKLAG = 'f'` filter on the output to exclude bot-like activity
 > - `TimeOut` defines inactivity — if two consecutive events for the same entity are more than `TimeOut` seconds apart, the second event starts a new session
 > - Output is commonly used as input to `nPath` for path pattern analysis
 
@@ -228,7 +227,7 @@ Symbols(
 > - Symbols are case-insensitive (`A` = `a`); one or two uppercase letters recommended for readability
 > - NULL rows match no symbol and are ignored
 > - For multiple input tables, qualify ambiguous columns: `table.column = value AS SYM`
-> - `LAG`/`LEAD` predicates: `current_expr operator LAG(prev_expr, n [, default])` — cannot use `OR` in same symbol definition; if input is a subquery, it must have an alias
+> - `LAG`/`LEAD` predicates: `current_expr operator LAG(prev_expr, n [, default])` — cannot use `OR` in same symbol definition; a subquery input worked without an alias in testing
 
 **Pattern operators** (in decreasing precedence):
 
@@ -281,7 +280,7 @@ Filter(
 | `AVG / MAX / MIN / SUM(col OF sym_list)` | Standard aggregates over matched rows |
 | `DUPCOUNT(col OF sym_list)` | Duplicate count vs immediately preceding matched row |
 | `DUPCOUNTCUM(col OF sym_list)` | Cumulative duplicate count across all preceding matched rows |
-| `ACCUMULATE(col OF sym_list [DELIMITER 'x'])` | Concatenated ordered list of values; optionally DISTINCT or CDISTINCT (consecutive distinct) |
+| `ACCUMULATE(col OF sym_list [DELIMITER 'x'])` | Concatenated ordered list of values wrapped in `[ ]`; `NULL` values appear as the text `null`; default separator is `', '`; optionally DISTINCT or CDISTINCT (consecutive distinct) |
 
 > - `symbol_list` is either a single symbol or `ANY(sym1, sym2, ...)` to aggregate across multiple symbols
 > - `ACCUMULATE` returns VARCHAR (≤64000 chars LATIN / ≤32000 UNICODE) or CLOB for larger sizes
@@ -317,14 +316,16 @@ SELECT * FROM nPath(
 **Example 2 — product sequence for transformer pipeline:**
 
 ```sql
--- Build ordered product sequences from grocery basket events
--- Output can be tokenized and passed to a transformer for next-item prediction
-SELECT * FROM nPath(
+-- ACCUMULATE wraps output in [ ] and writes NULL as the text null; the default separator is ', '.
+-- For a clean token sequence, match only non-NULL rows and strip the brackets:
+SELECT customer_id,
+       OREPLACE(OREPLACE(product_sequence, '[', ''), ']', '') AS product_sequence
+FROM nPath(
     ON basket_events PARTITION BY customer_id ORDER BY event_time
     USING
         Mode(NONOVERLAPPING)
         Pattern('A+')
-        Symbols(TRUE AS A)
+        Symbols(product_name IS NOT NULL AS A)
         Result(
             FIRST(customer_id  OF A)                         AS customer_id,
             FIRST(session_id   OF A)                         AS session_id,
@@ -336,7 +337,7 @@ SELECT * FROM nPath(
 -- Ready for tokenization and transformer model input
 ```
 
-**Example 3 — job transition path (LAG in symbol, greedy matching):**
+**Example 3 — job transition path (LIKE predicates and greedy matching):**
 
 ```sql
 SELECT job_path, COUNT(*) AS path_count

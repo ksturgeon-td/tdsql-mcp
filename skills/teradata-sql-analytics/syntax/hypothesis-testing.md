@@ -21,6 +21,7 @@ SELECT * FROM TD_ANOVA(
 ) AS t;
 
 -- Mode 2: long format (group name + value columns)
+-- Use MULTISET when creating the input table — CREATE TABLE AS produces a SET table and silently drops duplicate values
 SELECT * FROM TD_ANOVA(
     ON { db.table | db.view | (query) } AS InputTable
     USING
@@ -45,17 +46,17 @@ SELECT * FROM TD_ANOVA(
 
 | Column | Type | Description |
 |--------|------|-------------|
-| `sum_of_squares (between groups)` | DOUBLE | Variation between group means |
-| `sum_of_squares (within groups)` | DOUBLE | Variation within groups |
-| `Df (between groups)` | INTEGER | Degrees of freedom between groups (k-1) |
-| `Df (within groups)` | INTEGER | Degrees of freedom within groups (N-k+1) |
-| `mean_square (between groups)` | DOUBLE | Between-group SS / Df |
-| `mean_square (within groups)` | DOUBLE | Within-group SS / Df |
+| `sum_of_squares(between groups)` | DOUBLE | Variation between group means (no space before `(`; quote in queries) |
+| `sum_of_squares(within groups)` | DOUBLE | Variation within groups (no space before `(`; quote in queries) |
+| `df(between groups)` | INTEGER | Degrees of freedom between groups (k-1) |
+| `df(within groups)` | INTEGER | Degrees of freedom within groups (N-k; 9 for 12 obs in 3 groups) |
+| `mean_square(between groups)` | DOUBLE | Between-group SS / df |
+| `mean_square(within groups)` | DOUBLE | Within-group SS / df |
 | `F_statistic` | DOUBLE | Ratio of between/within mean squares; reject null when > `critical_f` |
 | `alpha` | DOUBLE | Significance level used |
 | `critical_f` | DOUBLE | Critical F value at (k-1, N-k) degrees of freedom |
 | `p_value` | DOUBLE | Probability of observed F under null hypothesis; reject null when < `alpha` |
-| `conclusion` | VARCHAR | Test result — null hypothesis rejected or not |
+| `conclusion` | VARCHAR | `'Reject Null hypothesis'` or `'Fail to reject Null hypothesis'` (capital N); trailing NUL appended — filter with `OREPLACE(conclusion, CHR(0), '') = '...'` or `LIKE 'Reject%'` |
 
 > **Notes:**
 > - Assumes normally distributed data with approximately equal group variances
@@ -70,7 +71,7 @@ Performs Pearson's chi-squared test on a contingency table to determine if two c
 
 ```sql
 SELECT * FROM TD_ChiSq(
-    ON { db.table | db.view | (query) } AS CONTINGENCY   -- alias must be CONTINGENCY (not InputTable)
+    ON { db.table | db.view | (query) } AS CONTINGENCY   -- alias is not validated; any name works
     [ OUT [ PERMANENT | VOLATILE ] TABLE EXPCOUNTS(db.expected_values_table) ]
     USING
         [ Alpha(0.05) ]                           -- optional; significance level; default 0.05
@@ -103,14 +104,14 @@ male      45        65
 | `alpha` | DOUBLE | Significance level used |
 | `p_value` | DOUBLE | Probability under null hypothesis; reject null when < `alpha` |
 | `criticalvalue` | DOUBLE | Critical chi-square value at given alpha and df |
-| `conclusion` | VARCHAR | `'reject null hypothesis'` or `'fail to reject null hypothesis'` |
+| `conclusion` | VARCHAR | `'Reject Null hypothesis'` or `'Fail to reject Null hypothesis'` (capital N); trailing NUL appended — filter with `OREPLACE(conclusion, CHR(0), '') = '...'` or `LIKE 'Reject%'` |
 
 **EXPCOUNTS table** (only written when `OUT` clause is used):
 Same schema as the CONTINGENCY input table, but all frequency columns are `DOUBLE PRECISION`. Contains expected frequencies under the null hypothesis.
 
 > **Notes:**
 > - No `PARTITION BY` — function does not use it
-> - Input alias must be `CONTINGENCY`, not `InputTable`
+> - The input alias is not validated (`CONTINGENCY`, `InputTable`, and arbitrary names all worked)
 > - Supported test types: one-tailed (upper), one-sample, unpaired
 
 ---
@@ -127,9 +128,10 @@ SELECT * FROM TD_FTest(
         FirstSampleColumn('col_a')                -- required (Mode 1); do not use with FirstSampleVariance
         SecondSampleColumn('col_b')               -- required (Mode 1); do not use with SecondSampleVariance
         [ AlternativeHypothesis('two-tailed') ]   -- optional; default 'two-tailed'
-                                                  --   'lower-tailed' — H1: μ < μ0
-                                                  --   'upper-tailed' — H1: μ > μ0
-                                                  --   'two-tailed'   — H1: μ ≠ μ0
+                                                  --   'lower-tailed' — H1: variance of first sample < variance of second
+                                                  --   'upper-tailed' — H1: variance of first sample > variance of second
+                                                  --   'two-tailed'   — H1: the variances differ
+                                                  -- (see one-sided caveat in Notes)
         [ Alpha(0.05) ]                           -- optional; significance level; default 0.05
 ) AS t;
 
@@ -169,13 +171,14 @@ SELECT * FROM TD_FTest(
 | `CriticalValue` | DOUBLE | Critical F value at given alpha |
 | `Alpha` | DOUBLE | Significance level used |
 | `p_value` | DOUBLE | Probability under null hypothesis; reject null when < `Alpha` |
-| `Conclusion` | VARCHAR | `'reject null hypothesis'` or `'fail to reject null hypothesis'` |
+| `Conclusion` | VARCHAR | `'Reject Null hypothesis'` or `'Fail to reject Null hypothesis'` (capital N; no trailing NUL for TD_FTest) |
 
 > **Notes:**
 > - `ON InputTable` is optional — omit entirely when using Mode 3 (pre-computed variances)
 > - `FirstSampleColumn`/`SecondSampleColumn` and `SampleNameColumn`/`SampleValueColumn` are mutually exclusive
 > - If using columns to compute variance, do not also specify `FirstSampleVariance`/`SecondSampleVariance`
 > - `df1`/`df2` are inferred from the data in Modes 1 and 2; required only in Mode 3
+> - **One-sided tests:** in testing, `p_value` for `'lower-tailed'` and `'upper-tailed'` returned the smaller-tail probability regardless of direction, and `Conclusion` could contradict the data. Use `'two-tailed'`, or confirm the variance ratio lies in the hypothesized direction before trusting a one-sided result.
 
 ---
 
@@ -186,7 +189,7 @@ Tests whether one or two sample means are significantly different. Uses known po
 ```sql
 -- Mode 1: wide format (one or two columns in InputTable)
 SELECT * FROM TD_ZTest(
-    ON { db.table | db.view | (query) }               -- note: no AS alias in this function
+    ON { db.table | db.view | (query) }               -- AS alias accepted but not required
     USING
         FirstSampleColumn('col_a')                    -- required (Mode 1)
         [ SecondSampleColumn('col_b') ]               -- optional; omit for one-sample test
@@ -201,6 +204,7 @@ SELECT * FROM TD_ZTest(
 ) AS t;
 
 -- Mode 2: long format (group name + value columns)
+-- Use MULTISET when creating the input table — CREATE TABLE AS produces a SET table and silently drops duplicate values
 SELECT * FROM TD_ZTest(
     ON { db.table | db.view | (query) }
     USING
@@ -220,8 +224,8 @@ SELECT * FROM TD_ZTest(
 
 | Column | Type | Description |
 |--------|------|-------------|
-| `sample_column_1` | VARCHAR | First sample identifier |
-| `sample_column_2` | VARCHAR | Second sample identifier — only present in two-sample test |
+| `firstsamplecolumn` | VARCHAR | First sample identifier (the column or group name, e.g. `g1`) |
+| `secondsamplecolumn` | VARCHAR | Second sample identifier — only present in two-sample test |
 | `N1` | INTEGER | First sample size |
 | `N2` | INTEGER | Second sample size — only present in two-sample test |
 | `mean1` | DOUBLE | First sample mean |
@@ -231,10 +235,10 @@ SELECT * FROM TD_ZTest(
 | `Alpha` | DOUBLE | Significance level used |
 | `CriticalValue` | DOUBLE | Critical Z value at given alpha |
 | `p_value` | DOUBLE | Probability under null hypothesis; reject null when < `Alpha` |
-| `Conclusion` | VARCHAR | `'reject null hypothesis'` or `'fail to reject null hypothesis'` |
+| `Conclusion` | VARCHAR | `'Reject Null hypothesis'` or `'Fail to reject Null hypothesis'` (capital N); trailing NUL appended — filter with `OREPLACE(conclusion, CHR(0), '') = '...'` or `LIKE 'Reject%'` |
 
 > **Notes:**
-> - No `AS` alias on the `ON` clause — this function does not use an input alias
+> - The `ON` clause accepts an `AS` alias (e.g. `AS InputTable`) even though most examples omit it
 > - One-sample test: omit `SecondSampleColumn`/`SecondSampleName`
 > - `FirstSampleVariance` is required when sample size < 30; for larger samples the function approximates variance from the data
 > - Rejection confidence level is `1 - Alpha` when null hypothesis is rejected

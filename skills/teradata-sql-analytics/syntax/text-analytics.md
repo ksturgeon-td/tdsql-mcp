@@ -17,10 +17,10 @@ SELECT * FROM TD_NgramSplitter(
     PARTITION BY ANY
     USING
         TextColumn('text_col')                        -- required; column containing input text
-        Grams(2)                                      -- required; n-gram size(s):
-                                                      --   single:   Grams(2)
-                                                      --   multiple: Grams(1, 2, 3)
-                                                      --   range:    Grams('1-3')
+        Grams(2)                                      -- required; n-gram size(s), exactly one value:
+                                                      --   single: Grams(2)
+                                                      --   range:  Grams('1-3')
+                                                      -- A list such as Grams(1, 2, 3) fails with error 7810
         [ Delimiter('\s+') ]                          -- optional; regex separating tokens; default '\s+'
         [ Punctuation('[`~#^&*()-]') ]                -- optional; regex of chars to strip; default '[`~#^&*()-]'
         [ Reset('[.?!]') ]                            -- optional; regex of sentence-boundary chars; default '[.?!]'
@@ -28,14 +28,15 @@ SELECT * FROM TD_NgramSplitter(
         [ ConvertToLowerCase('true') ]                -- optional; default 'true'
         [ OutputTotalGramCount('false') ]             -- optional; default 'false'
         [ NGramColName('ngram') ]                     -- optional; override output column name for ngram text
-        [ NColName('n') ]                             -- optional; override output column name for gram size
         [ FrequencyColName('frequency') ]             -- optional; override output column name for count
-        [ TotalGramCountColName('totalcnt') ]         -- optional; override output column name for total count
+                                                      -- the gram-size column is always 'n'; the total-count column
+                                                      -- is always 'totalcnt'. NColName and TotalGramCountColName
+                                                      -- are not supported (error 7810)
         [ Accumulate('id_col', 'cat_col') ]           -- optional; columns or range to pass through
 ) AS t;
 ```
 
-> **Default output columns:** `ngram`, `n`, `frequency` (+ `totalcnt` if `OutputTotalGramCount('true')`)
+> **Output columns:** `ngram`, `n`, `frequency` (+ `totalcnt` if `OutputTotalGramCount('true')`). Use `NGramColName` and `FrequencyColName` to rename `ngram` and `frequency`; `n` and `totalcnt` cannot be renamed.
 
 ---
 
@@ -90,7 +91,8 @@ SELECT * FROM TD_NaiveBayesTextClassifierPredict(
         InputTokenColumn('token_col')         -- required; column of individual tokens
         DocIDColumns('doc_id_col')            -- required; document ID column(s)
         [ ModelType('Multinomial') ]          -- optional; default 'Multinomial'; must match Trainer
-        [ TopK(3) ]                           -- optional; return top K predicted categories
+        [ TopK(3) ]                           -- optional; return top K predicted categories;
+                                              -- without TopK, all categories are returned (one row per category per document)
                                               --   TopK and Responses are mutually exclusive
         [ Responses('cat1', 'cat2') ]         -- optional; return scores for specific categories only
         [ OutputProb('false') ]               -- optional; include probability scores; default 'false'
@@ -140,7 +142,10 @@ SELECT * FROM TD_SentimentExtractor(
 ```sql
 CREATE TABLE sentiment_dict (
     sentiment_word    VARCHAR(128),  -- sentiment term (max 128 chars)
-    polarity_strength INTEGER        -- sentiment strength value
+    polarity_strength INTEGER        -- the default dictionary uses only 1 (positive), -1 (negative),
+                                     -- and 999 (negator, e.g. 'not'); a CustomDictionaryTable replaces
+                                     -- the default's negators, so include 999 rows or negation is ignored.
+                                     -- AdditionalDictionaryTable extends the default and keeps its negators.
 );
 ```
 
@@ -187,9 +192,10 @@ SELECT * FROM TD_WordEmbeddings(
 | Column | Present when | Description |
 |--------|-------------|-------------|
 | `IDColumn` | always | Unique row identifier |
-| `tokenColumn` | `token-embedding` only | Individual token from input text |
-| `v1`, `v2`, ... `vN` | `token-embedding`, `doc-embedding` | Vector coordinates (one column per dimension) |
-| `similarity` | `token2token-similarity`, `doc2doc-similarity` | Similarity score between primary and secondary text |
+| `TD_Token` | `token-embedding` only | Distinct token from the input text; tokens missing from the model return a zero vector |
+| `TD_TokenCount` | `token-embedding` only | Number of times the token occurs in the row's text |
+| `v1`, `v2`, ... `vN` | `token-embedding`, `doc-embedding` | Vector coordinates (one column per dimension); `doc-embedding` averages over tokens present in the model (unknown tokens are excluded from the mean) |
+| `Similarity` | `token2token-similarity`, `doc2doc-similarity` | Absolute value of the cosine similarity (0 to 1); a negative cosine is returned as positive, so opposite-direction vectors score as highly similar; a zero vector returns 0 |
 
 **Model table format** (GloVe format — one token per row):
 
@@ -205,6 +211,7 @@ delicious  -0.18164  -0.13281   0.03906   0.31445
 > - `SecondaryColumn` is required for `token2token-similarity` and `doc2doc-similarity`
 > - `Accumulate` is not supported with `token-embedding`
 > - `RemoveStopWords` is not applicable for `token2token-similarity`
+> - **Similarity is the absolute cosine** — opposite-direction vectors (cosine = −1) score 1.0; for sentiment-like use cases this means antonyms appear maximally similar
 
 ---
 
@@ -228,7 +235,7 @@ SELECT * FROM TD_TFIDF(
                                               --   'AUGMENT' — 0.5 + 0.5 * f(t,d) / max_freq_in_doc
         [ IDFNormalization('LOG') ]           -- optional; default 'LOG'
                                               --   'UNARY'   — idf = 1 (disables IDF)
-                                              --   'LOG'     — log(N / Nt)
+                                              --   'LOG'     — ln(N / Nt)  (natural logarithm)
                                               --   'LOGNORM' — 1 + log(N / Nt)
                                               --   'SMOOTH'  — 1 + log((1+N) / (1+Nt))
         [ Regularization('NONE') ]            -- optional; default 'NONE'
@@ -262,8 +269,7 @@ SELECT * FROM TD_TextTagger(
     USING
         TaggingRules('rule AS tag' [,...])    -- required if no Rules table; disallowed if Rules table present
                                               -- max 2000 rules
-        [ InputLanguage('en') ]               -- optional; default 'en'; English only
-                                              -- required when Tokenize('true')
+        [ InputLanguage('en') ]               -- optional; default 'en'; English only (also applies when Tokenize('true'))
         [ Tokenize('false') ]                 -- optional; default 'false'
                                               -- tokenizes input text before evaluating rules
         [ OutputByTag('false') ]              -- optional; default 'false'
@@ -315,8 +321,8 @@ CREATE TABLE tagger_rules (
 > **Notes:**
 > - Operands: string literals use double quotes (`"word"`); regex uses `regex"pattern"` (Java regex)
 > - Lists of operands separated by semicolons: `"good;bad"` or `regex"invest[\w];risk[\w]"`
-> - In `TaggingRules`: backslashes in regex must be doubled (`regex"from\\s+"`)
-> - In Rules table: backslashes are not doubled (`regex"from\s+"`)
+> - Backslashes are written once in both places
+> - `OutputByTag('true')` still returns a row with an empty `tag` for documents with no match: `TaggingRules('contain(txt, regex"very\s+happy", 1,) AS tag')` and in the Rules table; a doubled backslash (`\\s+`) matched nothing in testing
 > - String literal matching is case-insensitive; regex matching is case-sensitive
 
 **Example:**
@@ -361,7 +367,9 @@ SELECT * FROM TD_TextParser(
         [ StemTokens('false') ]                   -- optional; default 'false'
                                                   -- reduces tokens to root forms
         [ RemoveStopWords('false') ]              -- optional; default 'false'
-                                                  -- requires StopWordsTable if 'true'
+                                                  -- without a StopWordsTable a built-in list is used; it removes
+                                                  -- 'not', so supply your own StopWordsTable when negation matters
+                                                  -- (sentiment analysis, classification)
         [ Delimiter(' \t\n\f\r') ]                -- optional; single-character delimiters
                                                   -- default: ' \t\n\f\r'
         [ DelimiterRegex('regex') ]               -- optional; PCRE regex as token delimiter
@@ -408,6 +416,8 @@ CREATE TABLE stop_words (
 > - No `PARTITION BY` — this function does not use it
 > - `Delimiter` and `DelimiterRegex` are alternatives; `DelimiterRegex` takes a PCRE pattern while `Delimiter` takes literal single characters
 > - When `OutputByWord('false')`: `ListPositions` and `TokenFrequency` are ignored; all tokens output as one space-separated cell
+> - Token positions in `ListPositions` output are **zero-based** (the first token is at position 0)
+> - All input columns are copied to output by default; `Accumulate` overrides this to pass through only named columns
 
 ---
 
@@ -423,7 +433,8 @@ SELECT * FROM TD_TextMorph(
                                                 -- max 1 column; English only (LATIN or UNICODE)
         [ POSTagColumn('pos_tag_col') ]         -- optional; column of POS tags for each word
                                                 -- if provided, morphs are generated per POS tag
-        [ SingleOutput('true') ]                -- optional; default 'true'
+        [ SingleOutput('true') ]                -- optional; the default returns ALL morphs (same as 'false');
+                                                -- pass SingleOutput('true') explicitly for one row per word
                                                 --   'true'  — one morph per word (first by precedence)
                                                 --   'false' — all morphs for each word
         [ POS('noun', 'verb') ]                 -- optional; filter output to specific POS
@@ -440,7 +451,7 @@ SELECT * FROM TD_TextMorph(
 |--------|-------------|
 | `word_column` | Input token (same name as the `WordColumn` argument) |
 | `TD_Morph` | Standard/dictionary form of the token |
-| `POS` | Part of speech: `'noun'`, `'verb'`, `'adj'`, or `'adv'` |
+| `POS` | Part of speech in uppercase: `NOUN`, `VERB`, `ADJ`, or `ADV`; `NULL` for words with no dictionary entry. The `POS(...)` filter argument takes lowercase values: `'noun'`, `'verb'`, `'adj'`, `'adv'` |
 
 > **Notes:**
 > - No `PARTITION BY` — this function does not use it
@@ -473,10 +484,10 @@ SELECT * FROM TD_NERExtractor(
 
 | Column | Description |
 |--------|-------------|
-| `entity` | Matched text |
-| `"type"` | Entity label (from `type_ner` in Dict or Rules) — reserved word, requires quoting |
-| `start` | Start word position of match |
-| `end` | End word position of match |
+| `entity` | Matched text, padded with trailing NUL characters to length 1000; use `OREPLACE(entity, CHR(0), '')` for equality comparisons |
+| `"type"` | Entity label (from `type_ner` in Dict or Rules); reserved word, requires quoting |
+| `"start"` | Start word position (1-based) of the match; reserved word, requires quoting |
+| `"end"` | End word position (1-based) of the match; reserved word, requires quoting |
 | `context` | Surrounding words (controlled by `ShowContext`) |
 | `approach` | `'RULE'` or `'DICT'` — which table produced the match |
 
@@ -499,12 +510,11 @@ CREATE MULTISET TABLE ner_rules (
 ```
 
 > **Notes:**
-> - Dict matching trims leading/trailing whitespace and is case-insensitive;
->   dict entries can also contain regex patterns
-> - `start`/`end` are word positions, not character offsets
+> - Dict matching trims leading/trailing whitespace and is case-insensitive; dict entries can also contain regex patterns
+> - `"start"`/`"end"` are 1-based word positions, not character offsets; both are reserved words and must be quoted in queries
 > - Either or both of Dict and Rules can be omitted
-> - Regex escaping: most special characters need one backslash (`\$`, `\.`, `\+`, etc.) —
->   double-escaping is not required
+> - Regex escaping: most special characters need one backslash (`\$`, `\.`, `\+`, etc.) — double-escaping is not required
+> - Missing context words appear as `...` in the `context` column
 
 **Example:**
 

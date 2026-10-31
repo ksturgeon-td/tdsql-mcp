@@ -518,7 +518,7 @@ Single-layer ART (ARTPRIMARY only).
 |--------|------|-------------|
 | `derived-series-identifier` | Varies | Inherited from SERIES_ID |
 | `ROW_I` | Varies | Index; type depends on OUTPUT_FMT |
-| `MAGNITUDE_<field>` | REAL | Smoothed values; one per payload field |
+| `<field>` | REAL | Smoothed values, under the input payload field's own name (e.g. `sales_amt`); one per payload field |
 
 ### Examples
 
@@ -591,8 +591,8 @@ No INPUT_FMT. No OUTPUT_FMT. Single-layer ART (ARTPRIMARY only).
 | `CONF_OFF_<field>` | FLOAT | Bartlett's formula critical value; present only if ALPHA set |
 | `CONF_LOW_<field>` | FLOAT | Confidence lower bound; present only if ALPHA set |
 | `CONF_HI_<field>` | FLOAT | Confidence upper bound; present only if ALPHA set |
-| `QSTATVAL` | FLOAT | Ljung-Box Q-statistic; present only if QSTAT(1) |
-| `PVALUE` | FLOAT | Q-statistic p-value; present only if QSTAT(1) |
+| `QSTATVAL_<field>` | FLOAT | Ljung-Box Q-statistic; present only if QSTAT(1) |
+| `PVAL_<field>` | FLOAT | Q-statistic p-value; present only if QSTAT(1) |
 
 Input: `REAL` or `MULTIVAR_REAL`. Output matches input dimensionality.
 
@@ -608,7 +608,7 @@ TD_ACF(
 
 SELECT * FROM acf_results;
 -- Returns: store_id, ROW_I (lag), OUT_sales, CONF_OFF_sales, CONF_LOW_sales, CONF_HI_sales,
---          QSTATVAL, PVALUE
+--          QSTATVAL_sales, PVAL_sales
 
 -- Rename output columns using COLUMNS() syntax
 EXECUTE FUNCTION COLUMNS(OUT_sales AS ACF_Coeff) INTO VOLATILE ART(acf_renamed)
@@ -670,9 +670,13 @@ TD_PACF(
 );
 
 -- Chain from TD_ACF output — avoids reprocessing the raw series
+-- If the ACF ART was built with QSTAT or ALPHA it has several numeric columns;
+-- use PAYLOAD to select only the coefficient column, otherwise TD_PACF treats
+-- every numeric column as a payload and returns NaN/Infinity values.
+-- The output column is OUT_OUT_sales (the OUT_ prefix is applied to the already-prefixed field).
 EXECUTE FUNCTION INTO VOLATILE ART(pacf_from_acf)
 TD_PACF(
-    ART_SPEC(TABLE_NAME(acf_results)),
+    ART_SPEC(TABLE_NAME(acf_results), PAYLOAD(FIELDS(OUT_sales), CONTENT(REAL))),
     FUNC_PARAMS(ALGORITHM(LEVINSON_DURBIN), INPUT_TYPE(ACF), MAXLAGS(10), ALPHA(0.05))
 );
 ```
@@ -694,7 +698,7 @@ TD_ARIMAESTIMATE(
     ),
     [{ SERIES_SPEC(...) | ART_SPEC(...) },]            -- secondary: apply existing model
     FUNC_PARAMS(
-        ALGORITHM({ OLE | MLE | MLE_CSS | CSS }),
+        ALGORITHM({ OLE | MLE | CSS_MLE | CSS }),
         CONSTANT({ 0 | 1 }),
         NONSEASONAL(MODEL_ORDER(p, d, q)),
         [SEASONAL(MODEL_ORDER(P, D, Q), PERIOD(n)),]
@@ -712,7 +716,7 @@ TD_ARIMAESTIMATE(
 
 | Parameter | Required | Default | Description |
 |-----------|----------|---------|-------------|
-| `ALGORITHM` | Yes | — | `OLE` (ordinary least estimates), `MLE` (maximum likelihood), `MLE_CSS` (CSS start → MLE), `CSS` (conditional sum-of-squares) |
+| `ALGORITHM` | Yes | — | `OLE` (ordinary least estimates), `MLE` (maximum likelihood), `CSS_MLE` (CSS start → MLE), `CSS` (conditional sum-of-squares) |
 | `CONSTANT(0\|1)` | Yes | — | 1 = include intercept/constant term |
 | `NONSEASONAL(MODEL_ORDER(p,d,q))` | Yes | — | AR order (p), differencing order (d), MA order (q) |
 | `SEASONAL(MODEL_ORDER(P,D,Q), PERIOD(n))` | No | — | Seasonal AR (P), differencing (D), MA (Q); periods per season (n) |
@@ -727,8 +731,8 @@ TD_ARIMAESTIMATE(
 
 | Layer | Retrieved by | Contents |
 |-------|-------------|----------|
-| `ARTPRIMARY` | `SELECT *` | Coefficients: INDEX, COEFF_NAME, COEFF_VALUE; +STD_ERROR, ZSTAT_VALUE, ZSTAT_PROB if COEFF_STATS(1) |
-| `ARTFITMETADATA` | `TD_EXTRACT_RESULTS` | Goodness-of-fit: R², adjusted R², F-statistic, AIC, MAE, MSE, MAPE |
+| `ARTPRIMARY` | `SELECT *` | Coefficients: ROW_I, COEFF_NAME, COEFF_VALUE; +STD_ERROR, ZSTAT_VALUE, ZSTAT_PROB if COEFF_STATS(1) |
+| `ARTFITMETADATA` | `TD_EXTRACT_RESULTS` | Goodness-of-fit: R_SQUARE, R_ADJ_SQUARE, F-statistic (FSTAT_CALC, P_VALUE), ME, MAE, MSE, MPE, MAPE; no AIC (see TD_ARIMAVALIDATE) |
 | `ARTFITRESIDUALS` | `TD_EXTRACT_RESULTS` | ACTUAL_VALUE, CALC_VALUE, RESIDUAL per in-sample observation |
 | `ARTMODEL` | `TD_EXTRACT_RESULTS` | Binary model context (VARBYTE 32000) — consumed by TD_ARIMAVALIDATE |
 | `ARTVALDATA` | `TD_EXTRACT_RESULTS` | Holdout validation data (the FIT_PERCENTAGE remainder) |
@@ -866,7 +870,7 @@ TD_AUTOARIMA(
 
 | Layer | Generated when | Retrieved by | Contents |
 |-------|---------------|-------------|----------|
-| `ARTPRIMARY` | Always | `SELECT *` | Best-model coefficients: INDEX, COEFF_NAME, COEFF_VALUE; +stats if COEFF_STATS(1) |
+| `ARTPRIMARY` | Always | `SELECT *` | Best-model coefficients: ROW_I, COEFF_NAME, COEFF_VALUE; +stats if COEFF_STATS(1) |
 | `ARTFITMETADATA` | FIT_METRICS(1) | `TD_EXTRACT_RESULTS` | Same goodness-of-fit schema as TD_ARIMAESTIMATE |
 | `ARTFITRESIDUALS` | RESIDUALS(1) | `TD_EXTRACT_RESULTS` | ACTUAL_VALUE, CALC_VALUE, RESIDUAL |
 | `ARTMODEL` | Always | `TD_EXTRACT_RESULTS` | Binary model context (VARBYTE 64000) — consumed by TD_ARIMAFORECAST |
@@ -1053,3 +1057,11 @@ SELECT * FROM mv_result;    -- B0 (intercept), B1 (SALARY coeff), B2 (MORTGAGE c
 EXECUTE FUNCTION TD_EXTRACT_RESULTS(ART_SPEC(TABLE_NAME(mv_result), LAYER(ARTFITRESIDUALS)));
 -- Returns: CITYID, ROW_I, X1 (SALARY), X2 (MORTGAGE), ACTUAL_VALUE, CALC_VALUE, RESIDUAL
 ```
+
+---
+
+## Pipeline Notes
+
+- **Chained output names stack prefixes.** Feeding `TD_DIFF` output into `TD_UNDIFF` gives `OUT_OUT_sales_amt`; feeding `TD_POWERTRANSFORM` into itself gives `MAGNITUDE_MAGNITUDE_sales_amt`. Follow the documented rule when referencing columns in downstream steps.
+- **INITIAL_VALUES in TD_UNDIFF applies to every series.** A single value list is shared across all series in the ART; only the series it actually belongs to is restored correctly.
+- **TD_AUTOARIMA writes a permanent table by default.** The example uses `INTO ART(autoarima_art)`, which creates a permanent table that must be dropped later. Use `INTO VOLATILE ART(...)` during exploration.

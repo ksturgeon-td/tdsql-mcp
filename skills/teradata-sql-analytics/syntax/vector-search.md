@@ -47,7 +47,7 @@ SELECT * FROM TD_VectorDistance(
 
 | Measure | Range | Interpretation | Best for |
 |---------|-------|----------------|----------|
-| `Cosine` | [0, 2] | 0 = identical direction, 1 = orthogonal, 2 = opposite | Embeddings (direction matters, not magnitude); normalize first |
+| `Cosine` | [0, 2] | 0 = identical direction, 1 = orthogonal, 2 = opposite | Embeddings (direction matters, not magnitude); normalize first. Floating-point rounding can produce values slightly outside this range (e.g. ±2.2e-16); use `GREATEST(0, distance)` if downstream steps require non-negative values. |
 | `Euclidean` | [0, ∞) | Straight-line distance in feature space | Spatial data, clusters |
 | `Manhattan` | [0, ∞) | Sum of absolute differences per dimension | Sparse features |
 
@@ -58,19 +58,21 @@ SELECT * FROM TD_VectorDistance(
 **Semantic search — find top K most similar documents to a query vector:**
 
 ```sql
--- query_embedding is a single-row table with the query vector
+-- TopK returns K nearest ReferenceTable rows per TargetTable row,
+-- so the query vector is the TargetTable and the corpus is the ReferenceTable.
 SELECT * FROM TD_VectorDistance(
-    ON db.document_embeddings AS TargetTable PARTITION BY ANY
-    ON db.query_embedding AS ReferenceTable DIMENSION
+    ON db.query_embedding AS TargetTable PARTITION BY ANY
+    ON db.document_embeddings AS ReferenceTable DIMENSION
     USING
-        TargetIDColumn('doc_id')
+        TargetIDColumn('query_id')
         TargetFeatureColumns('embedding')    -- VECTOR column
-        RefIDColumn('query_id')
+        RefIDColumn('doc_id')
         RefFeatureColumns('embedding')
         DistanceMeasure('Cosine')
         TopK(10)
 ) AS t
 ORDER BY Distance ASC;
+-- target_id is the query id; reference_id is the document id
 ```
 
 **All-pairs distance within a single table (no ReferenceTable):**
@@ -83,7 +85,8 @@ SELECT * FROM TD_VectorDistance(
         TargetIDColumn('item_id')
         TargetFeatureColumns('embedding')
         DistanceMeasure('Cosine')
-        TopK(5)    -- return 5 nearest neighbors per item
+        TopK(6)    -- returns 6 rows per item; one of them is the item itself (distance ≈ 0).
+                   -- Filter with WHERE target_id <> reference_id to exclude the self-match.
 ) AS t;
 ```
 
@@ -187,13 +190,13 @@ SELECT * FROM TD_HNSW(
 ) AS t;
 
 -- Delete: remove vectors from an existing graph
+-- InputTable needs only the ID column — VectorColumn is not allowed for delete (error 7810)
 SELECT * FROM TD_HNSW(
     ON db.hnsw_model AS InputModelTable
     ON { db.rows_to_delete | (query) } AS InputTable DIMENSION
     OUT [ PERMANENT | VOLATILE ] TABLE ModelTable(db.hnsw_model_v2)
     USING
         IdColumn('id_col')
-        VectorColumn('embedding_col')
         AlterOperation('delete')
         [ DeleteMethod('reconstruction'|'deletenode') ]  -- default 'reconstruction'
         [ UseSIMD('false') ]
@@ -240,8 +243,8 @@ SELECT * FROM TD_HNSWPredict(
 |--------|------|-------------|
 | `id_col` | same as InputTable | Query vector identifier |
 | `nearest_neighbor_id` | INTEGER | ID of the nearest neighbor from the index |
-| `nearest_neighbor_distance` | REAL | Distance to neighbor — present when `OutputSimilarity('false')` (default) |
-| `nearest_neighbor_similarity` | REAL | Similarity to neighbor — present when `OutputSimilarity('true')` |
+| `distance` | numeric | Distance to neighbor — present when `OutputSimilarity('false')` (default) |
+| `similarity` | numeric | Similarity to neighbor — present when `OutputSimilarity('true')` |
 | `nearest_neighbor_vector` | VECTOR/Vector32/VARBYTE | Neighbor's vector — present when `OutputNearestVector('true')` |
 | `accumulate_col(s)` | any | Columns copied from InputTable |
 
@@ -270,7 +273,7 @@ SELECT * FROM TD_HNSWPredict(
         OutputSimilarity('true')
         Accumulate('query_text')
 ) AS t
-ORDER BY query_id, nearest_neighbor_similarity DESC;
+ORDER BY query_id, similarity DESC;
 ```
 
 ---
@@ -285,7 +288,7 @@ SELECT * FROM TD_HNSWSummary(
 ) AS t;
 ```
 
-**Output columns** (one row per node in the graph):
+**Output columns** (one row per node per layer, plus one all-NULL metadata row for each per-AMP graph; filter with `WHERE layer_id IS NOT NULL` when aggregating):
 
 | Column | Type | Description |
 |--------|------|-------------|
@@ -303,6 +306,7 @@ SELECT * FROM TD_HNSWSummary(
 
 ```sql
 -- Graph summary: nodes per layer, avg neighbor count
+-- Filter WHERE layer_id IS NOT NULL to exclude the per-AMP all-NULL metadata rows
 SELECT layer_id,
        COUNT(*)            AS node_count,
        AVG(num_neighbors)  AS avg_neighbors,
@@ -310,6 +314,7 @@ SELECT layer_id,
 FROM TD_HNSWSummary(
     ON db.hnsw_model AS ModelTable
 ) AS t
+WHERE layer_id IS NOT NULL
 GROUP BY layer_id
 ORDER BY layer_id DESC;
 
@@ -328,6 +333,14 @@ For very large vector tables where even HNSW build time is prohibitive, the Inve
 
 ```sql
 -- Step 1: cluster all vectors into K groups (run once, save centroids + assignments)
+-- TD_KMeans returns one row per centroid plus six all-NULL summary rows.
+-- Build the centroid lookup table by filtering out the NULL rows and renaming the cluster column:
+CREATE TABLE db.cluster_centroids AS (
+    SELECT td_clusterid_kmeans AS cluster_id, embedding
+    FROM db.kmeans_model
+    WHERE td_clusterid_kmeans IS NOT NULL
+) WITH DATA;
+
 CREATE TABLE db.vector_clusters AS (
     SELECT * FROM TD_KMeansPredict(
         ON db.normalized_embeddings AS InputTable PARTITION BY ANY
@@ -366,18 +379,19 @@ CREATE VOLATILE TABLE nearest_clusters AS (
 ) WITH DATA ON COMMIT PRESERVE ROWS;
 
 -- Step 3: exact similarity search within only the nearest clusters
+-- Query is TargetTable; in-cluster corpus is ReferenceTable DIMENSION (TopK applies per target row)
 SELECT * FROM TD_VectorDistance(
+    ON db.query_vector AS TargetTable PARTITION BY ANY
     ON (
         SELECT e.*
         FROM db.normalized_embeddings e
         JOIN db.vector_clusters c ON e.doc_id = c.doc_id
-        WHERE c.TD_ClusterID IN (SELECT cluster_id FROM nearest_clusters)
-    ) AS TargetTable PARTITION BY ANY
-    ON db.query_vector AS ReferenceTable DIMENSION
+        WHERE c.td_clusterid_kmeans IN (SELECT cluster_id FROM nearest_clusters)
+    ) AS ReferenceTable DIMENSION
     USING
-        TargetIDColumn('doc_id')
+        TargetIDColumn('query_id')
         TargetFeatureColumns('embedding')
-        RefIDColumn('query_id')
+        RefIDColumn('doc_id')
         RefFeatureColumns('embedding')
         DistanceMeasure('Cosine')
         TopK(10)

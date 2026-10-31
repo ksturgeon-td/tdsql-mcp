@@ -12,7 +12,6 @@ Discovers frequent patterns (itemsets) and association rules in transactional da
 ```sql
 SELECT * FROM TD_Apriori(
     ON { db.table | db.view | (query) } AS InputTable [ PARTITION BY ANY ]
-    [ OUT TABLE OutputTable('db.pattern_table') ]     -- optional; writes output to a named table
     USING
         TargetColumn('item_col')                      -- required; column containing item data; max 1
         [ IDColumn('transaction_id_col') ]            -- required for sparse input; groups items into transactions
@@ -24,10 +23,20 @@ SELECT * FROM TD_Apriori(
         [ PatternsOrRules('Patterns') ]               -- optional; default 'Patterns'
                                                       --   'Patterns' — frequent itemsets only
                                                       --   'Rules'    — association rules with metrics
-                                                      --   'Both'     — patterns and rules
+                                                      -- 'Both' is rejected (error 7810); run the function twice to get both outputs
         [ Support(0.01) ]                             -- optional; min itemset frequency as proportion
                                                       -- of total transactions; range (0,1]; default 0.01
+                                                      -- threshold is inclusive (itemsets at exactly the threshold are returned)
 ) AS t;
+
+-- TD_Apriori has no OUT TABLE clause (error 7810). To save the output, wrap the call in CREATE TABLE AS.
+-- Use MULTISET so repeated rows are not dropped:
+CREATE MULTISET TABLE db.pattern_table AS (
+    SELECT * FROM TD_Apriori(
+        ON db.baskets AS InputTable PARTITION BY ANY
+        USING TargetColumn('item') IDColumn('txn') Support(0.2)
+    ) AS t
+) WITH DATA;
 ```
 
 **Input formats:**
@@ -37,7 +46,22 @@ SELECT * FROM TD_Apriori(
 | Dense | One row per transaction; items in a single delimited cell in `TargetColumn` | Not used |
 | Sparse | One row per item; `IDColumn` groups items into a transaction | Required |
 
-**Output — Patterns** (`PatternsOrRules('Patterns')` or `'Both'`):
+> **Character set:** `TargetColumn` must be a LATIN column. Unicode input causes `Itemset` values to contain NUL characters between every letter (e.g. `CHAR_LENGTH('bread,milk')` returns 19 instead of 10). Convert Unicode columns first:
+> ```sql
+> SELECT * FROM TD_Apriori(
+>     ON (SELECT TRANSLATE(items USING UNICODE_TO_LATIN) AS items FROM db.baskets) AS InputTable PARTITION BY ANY
+>     USING TargetColumn('items') InputDelimiter(',') Support(0.2)
+> ) AS t;
+> ```
+> This was observed on dense input. Sparse Unicode input was not tested.
+
+> **Single-item itemsets:** Without `PartitionColumns`, `Patterns` output contains only itemsets of 2 to `MaxLen` items — single-item itemsets are not returned. With `PartitionColumns`, single items above the support threshold are included. To compute single-item support without a partition, use a separate query:
+> ```sql
+> SELECT item, COUNT(DISTINCT txn) * 1.0 / (SELECT COUNT(DISTINCT txn) FROM db.baskets) AS support
+> FROM db.baskets GROUP BY item;
+> ```
+
+**Output — Patterns** (`PatternsOrRules('Patterns')`):
 
 | Column | Type | Description |
 |--------|------|-------------|
@@ -45,15 +69,15 @@ SELECT * FROM TD_Apriori(
 | `Itemset` | VARCHAR | Comma-separated (or `OutputDelimiter`) set of items |
 | `Support` | REAL | Proportion of transactions containing this itemset |
 
-**Output — Rules** (`PatternsOrRules('Rules')` or `'Both'`):
+**Output — Rules** (`PatternsOrRules('Rules')`):
 
 | Column | Type | Description |
 |--------|------|-------------|
 | `partition_column(s)` | ANY | Partition pass-through columns |
 | `Antecedent` | VARCHAR | The "if" item(s) in the rule |
 | `Consequence` | VARCHAR | The "then" item(s) in the rule |
-| `Ante_ItemCnt` | — | Item count for antecedent (undocumented in source) |
-| `Conse_Item_Cnt` | — | Item count for consequence (undocumented in source) |
+| `Ante_Item_Cnt` | INTEGER | Number of items in the antecedent |
+| `Conse_Item_Cnt` | INTEGER | Number of items in the consequence |
 | `cntb` | INTEGER | Co-occurrence count of antecedent and consequence |
 | `Cnt_Antecedent` | INTEGER | Occurrence count of antecedent |
 | `Cnt_Consequence` | INTEGER | Occurrence count of consequence |
@@ -82,7 +106,8 @@ SELECT * FROM TD_CFilter(
         [ PartitionColumns('region_col') ]            -- optional; partition input and output; max 10
                                                       -- output is nondeterministic unless each
                                                       -- partition_col is unique within TransactionIDColumns
-        [ MaxDistinctItems(100) ]                     -- optional; max item set size; default 100
+        [ MaxDistinctItems(100) ]                     -- optional; maximum number of distinct items in one transaction; default 100
+                                                      -- transactions with more items are silently excluded from all counts
 ) AS t;
 ```
 
@@ -100,9 +125,10 @@ SELECT * FROM TD_CFilter(
 | `support` | REAL | `cntb / tran_cnt` — proportion of transactions containing both items |
 | `confidence` | REAL | `cntb / cnt1` — proportion of item1 transactions that also contain item2 |
 | `lift` | REAL | `support(A∩B) / (support(A) × support(B))` — >1 positive, =1 independent, <1 negative |
-| `z_score` | REAL | `(cntb - mean(cntb)) / sd(cntb)` — co-occurrence significance; not calculated if all `cntb` values are equal |
+| `z_score` | REAL | `(cntb - mean(cntb)) / population_sd(cntb)` — co-occurrence significance; not calculated if all `cntb` values are equal |
 
 > **Notes:**
 > - Always pairwise — unlike `TD_Apriori`, does not produce itemsets of size > 2 or association rules
 > - `TransactionIDColumns` accepts multiple columns (composite transaction key)
-> - `z_score` is null/absent when all `cntb` values are equal (sd = 0)
+> - **Each pair appears in both directions** — `(bread, milk)` and `(milk, bread)` are separate rows, with `cnt1`, `cnt2`, and `confidence` swapped; the guide's "one row per item pair" is inaccurate
+> - `z_score` uses the **population** standard deviation (not sample); it is null/absent when all `cntb` values are equal (sd = 0)

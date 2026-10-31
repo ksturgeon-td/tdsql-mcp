@@ -58,6 +58,7 @@ TD_ARIMAESTIMATE(
         ROW_AXIS(SEQUENCE(seq_no)),
         PAYLOAD(FIELDS(sales_amt), CONTENT(REAL))),
     FUNC_PARAMS(NONSEASONAL(MODEL_ORDER(1,0,1)),
+        ALGORITHM(MLE), CONSTANT(1),
         FIT_PERCENTAGE(70), FIT_METRICS(1), RESIDUALS(1))
 );
 
@@ -78,6 +79,12 @@ TD_ARIMAFORECAST(
 -- Step 4: retrieve forecast results
 SELECT * FROM arima_fcst;
 ```
+
+**Notes on ARTs:**
+- A permanent ART is a NoPI table (table kind `O`); add a primary index explicitly if you plan to join or look up rows by key.
+- The ART index column is `ROW_I`, not `INDEX`.
+- UAF functions do not appear in `DBC.FunctionsV` (only `TD_CONVERTTABLEFORUAF` is listed); a dictionary search is not a reliable availability check.
+- A `GENSERIES_SPEC` payload is named `field0` by default, which becomes `OUT_field0` after a function like `TD_ACF`.
 
 ---
 

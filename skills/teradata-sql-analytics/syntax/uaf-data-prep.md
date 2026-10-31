@@ -38,7 +38,7 @@ TD_RESAMPLE(
 | `SEQUENCE(START_VALUE(...), DURATION(...))` | Yes (if SEQUENCE-indexed) | Starting index and step; mutually exclusive with TIMECODE |
 | `INTERPOLATE` | Yes | Fill method: `LINEAR`, `LAG` (carry forward), `LEAD` (carry back), `WEIGHTED`, `SPLINE` |
 | `WEIGHT(float)` | If WEIGHTED | Weight value for weighted interpolation |
-| `SPLINE_PARAMS(METHOD(...), YP1(float), YPN(float))` | If SPLINE | Spline method: `NATURAL`, `CLAMPED`, `NOT_A_KNOT` (default); YP1/YPN = first-derivative boundary conditions for CLAMPED |
+| `SPLINE_PARAMS(METHOD(...), YP1(float), YPN(float))` | No (SPLINE only) | Spline method: `NATURAL`, `CLAMPED`, `NOT_A_KNOT` (default when omitted); YP1/YPN = first-derivative boundary conditions, for CLAMPED |
 
 > **Default OUTPUT_FMT is FLOW_THROUGH** — not NUMERICAL_SEQUENCE as in most other UAF functions. Specify explicitly if you need integer row indexing.
 
@@ -289,3 +289,11 @@ TD_GENSERIES4FORMULA(
 | `ROW_I` | Integer index (NUMERICAL_SEQUENCE) or original timestamp (FLOW_THROUGH) |
 | `ESTIMATE_MODE columns` | Input parameters, present only when ESTIMATE_MODE(1) |
 | `MAGNITUDE` | Generated series values |
+
+---
+
+## Pipeline Notes
+
+- **`DIV` means primary ÷ secondary** (not secondary ÷ primary). The guide's wording "secondary is divided into the primary" is technically correct but easy to misread.
+- **Output row indexes are zero-based positions.** `TD_IQR` and `TD_BINARYSERIESOP` number output rows from 0 regardless of the source index. Join back to the source by position, not the original index value.
+- **A volatile ART can be used directly as a series source.** Pass it by name in `SERIES_SPEC(TABLE_NAME(...))` just like a base table.

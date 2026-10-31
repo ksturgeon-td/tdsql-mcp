@@ -91,6 +91,8 @@ INSERT INTO sample_shapes VALUES (1007, 'MULTIPOLYGON(((1 1, 1 3, 6 3, 6 0, 1 1)
 INSERT INTO sample_shapes VALUES (1008, 'GEOMETRYCOLLECTION(POINT(10 10),
                                                             LINESTRING(15 15, 20 20))');
 -- GeoSequence: (points), (timestamps), (linkIDs), (count, user_fields...)
+-- User fields are field-major: all points for field 1, then all for field 2, etc.
+-- (2, 10, 12, 11, 18, 21, 19) = 2 fields; field 1 = [10,12,11], field 2 = [18,21,19]; GetUserFld(1,2) = 12
 INSERT INTO sample_shapes VALUES (1009,
   'GEOSEQUENCE((10 20, 30 40, 50 60),
                (2007-08-22 12:05:23.56, 2007-08-22 12:08:25.14, 2007-08-22 12:11:41.52),
@@ -130,12 +132,14 @@ Controls how ST_Geometry is exported/imported to/from client applications.
 | `TD_GEO_VARCHAR_SRID` | VARCHAR(64000) | EWKT | No |
 | `TD_GEO_VARBYTE_SRID` | VARBYTE(64000) | EWKB | No |
 
-Override for session: `SET TRANSFORM GROUP FOR TYPE ST_Geometry TO TD_GEO_VARCHAR;`
+Override for session: `SET TRANSFORM GROUP FOR TYPE ST_Geometry TD_GEO_VARCHAR;`  (`TO` is not valid — error 3707)
+Restore the default: `SET TRANSFORM GROUP FOR TYPE ST_Geometry ST_WellKnownText;`
 Override for user: specify in `CREATE/MODIFY USER` or `CREATE/MODIFY PROFILE`.
 
 Inspect current settings:
 ```sql
-EXEC SYSUDTLIB.HelpCurrentSessionTransforms;
+-- HelpCurrentSessionTransforms raised internal error 3610 on 20.00.30.76 after a
+-- session-level SET TRANSFORM GROUP; do not run it after an override until this is fixed.
 EXEC SYSUDTLIB.HelpCurrentUserTransforms;
 EXEC SYSUDTLIB.HelpUserTransforms('username');
 ```
@@ -202,7 +206,7 @@ All methods are called as `column.method()` or `NEW ST_Geometry('...').method()`
 
 | Method | Returns | Notes |
 |--------|---------|-------|
-| `ST_AsText()` | CLOB | WKT representation |
+| `ST_AsText()` | CLOB | WKT representation; a CLOB cannot go through UNION or any hashing step (error 5690) — cast to VARCHAR first |
 | `ST_AsBinary()` | BLOB | WKB representation (max ~16MB) |
 | `ST_GeometryType()` | VARCHAR(128) | `'ST_Point'`, `'ST_LineString'`, etc. |
 | `ST_CoordDim()` | SMALLINT | 1/2/3 |
@@ -279,6 +283,7 @@ WHERE shape.ST_3DDistance('POINT(10 20 30)') < 1E0
 | `ST_ConvexHull()` | ST_Geometry | Use `Make_2D` on 3D result |
 | `ST_Envelope()` | ST_Geometry | Bounding rectangle (2D) |
 | `ST_MBR()` | MBR | 2D minimum bounding rectangle |
+| `ST_MBR_Xmin()`, `ST_MBR_Ymin()`, `ST_MBR_Xmax()`, `ST_MBR_Ymax()` | FLOAT | Corners of the geometry's 2D MBR; shortcuts for `ST_MBR().XMin()` etc. |
 | `MBB()` | MBB | 3D minimum bounding box |
 | `SimplifyPreserveTopology(tolerance)` | ST_Geometry | Lines/polygons only; always valid result |
 | `ST_Transform([toSRSid,] toWktSRS, fromWktSRS)` | ST_Geometry | Reproject to different SRS |
@@ -552,8 +557,11 @@ Prefer instance methods or system functions over these. Qualify with `SYSSPATIAL
 SELECT SYSSPATIAL.SphericalDistance(10, 20, 20, 30);
 
 -- Spheroidal distance — WGS84 default; fails for antipodal points
-SELECT SYSSPATIAL.SpheroidalDistance(-89.39, 43.09, -87.65, 41.90);
-SELECT SYSSPATIAL.SpheroidalDistance(-89.39, 43.09, -87.65, 41.90, 6378137, 298.257223563);
+-- Both SpheroidalDistance and SphericalDistance take (lat1, lon1, lat2, lon2).
+-- ST_Point uses POINT(x y) = (lon lat), so the argument order is reversed from the methods.
+-- Madison to Chicago = 194,757.05 m:
+SELECT SYSSPATIAL.SpheroidalDistance(43.09, -89.39, 41.90, -87.65);
+SELECT SYSSPATIAL.SpheroidalDistance(43.09, -89.39, 41.90, -87.65, 6378137, 298.257223563);
 
 -- Construct from WKT VARCHAR (max 64000 bytes; prefer constructor for performance)
 SELECT SYSSPATIAL.ST_GeomFromText('POINT(10 20)', 4326);
@@ -576,7 +584,7 @@ Tessellation provides an alternative spatial index approach using a multilevel g
 
 ### Tessellate_Index Method (on ST_Geometry)
 
-Generates cell IDs for indexing a geometry. Call this during INSERT to populate an index table.
+Returns one INTEGER cell ID per geometry: the cell that encloses it (cellID / 16 = cell number, cellID MOD 16 = level). Returns 0 when no single cell at the requested levels encloses the geometry. Each INSERT … SELECT adds one row per geometry. Call this during INSERT to populate an index table.
 
 ```sql
 CREATE TABLE cities_index (skey INTEGER, cellid INTEGER);

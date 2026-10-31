@@ -29,7 +29,7 @@ SELECT * FROM TD_GLMPredict(
 ) AS dt;
 ```
 
-> **Why this works:** `TD_ColumnTransformer` accepts up to 10 named FitTable DIMENSION inputs and applies all transforms in one pass. The CTE result is a clean feature set that feeds directly into any Predict function. FitTables must be **persistent named tables** — not subqueries.
+> **Why this works:** `TD_ColumnTransformer` accepts up to 10 named FitTable DIMENSION inputs and applies all transforms in one pass. The CTE result is a clean feature set that feeds directly into any Predict function. FitTables can be persistent tables or subqueries; save them as tables so scoring does not refit.
 
 **Swap the Predict function for any Train/Predict pair:**
 ```sql
@@ -37,7 +37,7 @@ SELECT * FROM TD_GLMPredict(
 SELECT * FROM TD_XGBoostPredict(
     ON transformed AS InputTable
     ON db.xgb_model AS ModelTable DIMENSION
-    USING IDColumn('id') Accumulate('target_col')
+    USING IDColumn('id') ModelType('Classification') Accumulate('target_col')
 ) AS dt;
 
 -- Decision Forest scoring pipeline
@@ -53,7 +53,7 @@ SELECT * FROM TD_DecisionForestPredict(
 -- Run each Fit function once on training data and persist the output
 CREATE TABLE db.scale_fit AS (
     SELECT * FROM TD_ScaleFit(
-        ON db.training_data PARTITION BY ANY
+        ON db.training_data AS InputTable PARTITION BY ANY
         USING TargetColumns('feat1', 'feat2', 'feat3') ScaleMethod('STD')
     ) AS t
 ) WITH DATA;
@@ -137,9 +137,10 @@ The standard supervised learning iteration cycle. Split once with a fixed seed, 
 
 ```sql
 -- Step 1: Split — tag rows as train (1) or test (0), persist the split
+-- Note: CREATE TABLE AS produces a NoPI table; fine here but add PRIMARY INDEX if joining on id later.
 CREATE TABLE db.data_split AS (
     SELECT * FROM TD_TrainTestSplit(
-        ON db.labeled_data PARTITION BY ANY
+        ON db.labeled_data AS InputTable PARTITION BY ANY
         USING
             IDColumn('id')
             TrainSize(0.75)
@@ -154,11 +155,11 @@ CREATE TABLE db.my_model AS (
     SELECT * FROM TD_XGBoost(
         ON (SELECT * FROM db.data_split WHERE TD_IsTrainRow = 1) AS InputTable
         USING
-            IDColumn('id')
             ResponseColumn('label')
             InputColumns('feat1', 'feat2', 'feat3')
+            ModelType('Classification')
             MaxDepth(6)
-            NumBoostedRounds(50)
+            NumBoostRounds(50)
     ) AS t
 ) WITH DATA;
 
@@ -167,7 +168,7 @@ CREATE VOLATILE TABLE predictions AS (
     SELECT * FROM TD_XGBoostPredict(
         ON (SELECT * FROM db.data_split WHERE TD_IsTrainRow = 0) AS InputTable
         ON db.my_model AS ModelTable DIMENSION
-        USING IDColumn('id') Accumulate('label')
+        USING IDColumn('id') ModelType('Classification') Accumulate('label')
     ) AS t
 ) WITH DATA ON COMMIT PRESERVE ROWS;
 
@@ -176,7 +177,7 @@ SELECT * FROM TD_ClassificationEvaluator(
     ON predictions AS InputTable
     USING
         ObservationColumn('label')
-        PredictionColumn('td_prediction')
+        PredictionColumn('Prediction')   -- the output column of TD_XGBoostPredict
         NumLabels(2)
 ) AS t;
 ```
@@ -195,7 +196,7 @@ When the minority class is rare, split first — then oversample the training se
 -- Step 1: Split first (locks test set — do not touch it again)
 CREATE TABLE db.data_split AS (
     SELECT * FROM TD_TrainTestSplit(
-        ON db.labeled_data PARTITION BY ANY
+        ON db.labeled_data AS InputTable PARTITION BY ANY
         USING
             IDColumn('id')
             TrainSize(0.80)
@@ -205,7 +206,12 @@ CREATE TABLE db.data_split AS (
 ) WITH DATA;
 
 -- Step 2: Oversample minority class in train set only
-CREATE TABLE db.train_augmented AS (
+-- TD_SMOTE requires a table or view — a subquery fails with error 9134 on 20.00.31.103
+CREATE VIEW db.train_rows AS
+SELECT id, feat1, feat2, feat3, label FROM db.data_split WHERE TD_IsTrainRow = 1;
+
+-- Use MULTISET to preserve duplicate synthetic rows (SET table silently drops them)
+CREATE MULTISET TABLE db.train_augmented AS (
     -- Original training rows
     SELECT id, feat1, feat2, feat3, label
     FROM db.data_split WHERE TD_IsTrainRow = 1
@@ -215,7 +221,7 @@ CREATE TABLE db.train_augmented AS (
     -- Synthetic minority samples — generated from training rows only
     SELECT id, feat1, feat2, feat3, label
     FROM TD_SMOTE(
-        ON (SELECT * FROM db.data_split WHERE TD_IsTrainRow = 1) PARTITION BY ANY
+        ON db.train_rows AS InputTable PARTITION BY ANY
         USING
             IDColumn('id')
             ResponseColumn('label')
@@ -231,10 +237,10 @@ CREATE TABLE db.my_model AS (
     SELECT * FROM TD_XGBoost(
         ON db.train_augmented AS InputTable
         USING
-            IDColumn('id')
             ResponseColumn('label')
             InputColumns('feat1', 'feat2', 'feat3')
-            NumBoostedRounds(50)
+            ModelType('Classification')
+            NumBoostRounds(50)
     ) AS t
 ) WITH DATA;
 
@@ -244,12 +250,12 @@ SELECT * FROM TD_ClassificationEvaluator(
         SELECT * FROM TD_XGBoostPredict(
             ON (SELECT * FROM db.data_split WHERE TD_IsTrainRow = 0) AS InputTable
             ON db.my_model AS ModelTable DIMENSION
-            USING IDColumn('id') Accumulate('label')
+            USING IDColumn('id') ModelType('Classification') Accumulate('label')
         ) AS t
     ) AS InputTable
     USING
         ObservationColumn('label')
-        PredictionColumn('td_prediction')
+        PredictionColumn('Prediction')   -- the output column of TD_XGBoostPredict
         NumLabels(2)
 ) AS t;
 ```
@@ -264,9 +270,10 @@ Train one model per partition in parallel, then score new data partition-by-part
 
 ```sql
 -- Step 1: Train — one model per partition_key value, in parallel
+-- Scale features before training; unscaled features can cause gradient-descent divergence (TD_GLM)
 CREATE TABLE db.micro_models AS (
     SELECT * FROM TD_GLM(
-        ON db.training_data PARTITION BY partition_key
+        ON db.training_data AS InputTable PARTITION BY partition_key
         USING
             InputColumns('feat1', 'feat2', 'feat3')
             ResponseColumn('target')
@@ -281,7 +288,7 @@ SELECT * FROM TD_GLMPredict(
     ON db.micro_models AS ModelTable PARTITION BY partition_key
     USING
         IDColumn('id')
-        Accumulate('partition_key', 'target')
+        Accumulate('target')        -- the partition column is returned automatically
 ) AS t;
 ```
 

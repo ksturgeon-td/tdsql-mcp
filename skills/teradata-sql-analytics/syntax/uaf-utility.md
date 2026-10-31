@@ -43,7 +43,7 @@ SELECT * FROM sinfo_results;
 | Column | Type | Description |
 |--------|------|-------------|
 | `derived-series-identifier` | Varies | Inherited from SERIES_ID |
-| `ROW_I` | BIGINT | Always 1 (one row per series) |
+| `ROW_I` | BIGINT | Always 0 (one row per series) |
 | `INDEX_DT` | VARCHAR(20) | Index data type: TIMESTAMP, DATE, INTEGER, FLOAT |
 | `INDEX_BEGIN` | Varies | First index value |
 | `INDEX_END` | Varies | Last index value |
@@ -141,8 +141,12 @@ SELECT * FROM TD_CONVERTTABLEFORUAF(
     USING
         TABLETYPE('MATRIX')     -- 'MATRIX' or 'SERIES'
         CONTENT('COMPLEX')      -- see content types below
-        ID(1)                   -- optional: series/matrix identifier column number
+        ID(1)                   -- optional: the identifier VALUE written to every output row (SERIES_ID or MATRIX_ID);
+                                --           not a column number
 ) AS t;
+-- Input rules: every column of the input table is treated as content (no id or row columns).
+-- COMPLEX and AMPLPHASE content require an even number of columns (read as consecutive pairs).
+-- The function generates the row ids (large integers, not sequential and not in input order).
 ```
 
 ### CONTENT options
@@ -150,15 +154,16 @@ SELECT * FROM TD_CONVERTTABLEFORUAF(
 | Value | Description |
 |-------|-------------|
 | `REAL` | Real floating-point numbers |
-| `COMPLEX` | Complex numbers (real + imaginary pair); output columns prefixed `REAL_`, `IMG_` |
+| `COMPLEX` | Complex numbers (real + imaginary pair); output columns named `REAL` and `IMAGINARY` (for `REAL` content: `REAL_<column>`) |
 | `AMPLPHASE` | Polar complex (amplitude + phase); output columns prefixed `AMPL_`, `PHASE_` |
 | `MULTIVARREAL` | Vector of real numbers; columns prefixed `REAL_` |
 | `MULTIVARCOMPLEX` | Vector of complex numbers; columns prefixed `REAL_`, `IMG_` |
 | `MULTIVARAMPLPHASE` | Vector of polar complex; columns prefixed `AMPL_`, `PHASE_` |
 | `ADHOC` | Arbitrary non-LOB data; no column renaming |
 
-> Matrix output has columns: identifier, ROW_ID, COL_ID, content columns.
-> Series output has columns: identifier, ROW_ID, content columns.
+> Matrix output has columns: `MATRIX_ID`, `ROW_ID`, `COL_ID`, then the content columns.
+> Series output has columns: `SERIES_ID`, `SERIES_ROW_ID`, then the content columns.
+> Row ids are generated values (large integers, not sequential and not in input order).
 
 ---
 
@@ -169,12 +174,13 @@ Creates a copy of an existing ART. Standard `CREATE TABLE AS` cannot be used on 
 **Invocation:** `CALL`
 
 ```sql
-CALL TD_COPYART(
+CALL SYSLIB.TD_COPYART(
     'source_db',        -- SRC_DATABASENAME
     'source_art',       -- SRC_TABLENAME
     'dest_db',          -- DST_DATABASENAME
     'dest_art',         -- DST_TABLENAME
-    'dest_map',         -- DST_MAPNAME (MAP name for destination)
+    'dest_map',         -- DST_MAPNAME: must be a SPARSE map the user can access;
+                        -- list available maps with: SELECT MapName FROM DBC.MapsV
     'true'              -- DST_ISPERMTABLE: 'true' = permanent; 'false' = volatile
 );
 ```
@@ -187,10 +193,17 @@ Creates finite impulse response (FIR) filter coefficients and writes them into a
 
 **Invocation:** `CALL`
 
-The target table must already exist with columns: `ID BIGINT`, `ROW_I BIGINT`, `MAG FLOAT`, `DESCRIPTION VARCHAR`.
+The target table must already exist with columns: `ID BIGINT`, `ROW_I BIGINT`, `FilterMag FLOAT`, `DESCRIPTION VARCHAR` (the column must be named `FilterMag`, not `MAG` — error 5628 otherwise).
+
+The procedure runs with SYSLIB's rights, so grant it access to the target table first:
+```sql
+GRANT SELECT, INSERT, DELETE, UPDATE ON mydb.filters TO SYSLIB;
+```
+
+> **Caution:** on Teradata 20.00.31.103, running the example against a plain MULTISET table inserted ~41 million rows (656 distinct ROW_I) and exhausted the database's space. Give the table a unique primary index on `(ID, ROW_I)` and check the row count after the call.
 
 ```sql
-CALL MyDB.TD_FILTERFACTORY1D(
+CALL SYSLIB.TD_FILTERFACTORY1D(
     'mydb',             -- DATABASENAME
     'filters',          -- TABLENAME (must exist; rows are inserted)
     102,                -- FILTERID
@@ -214,7 +227,7 @@ CALL MyDB.TD_FILTERFACTORY1D(
 | `BANDPASS` | Below LOWCUTOFF and above HIGHCUTOFF | Both cutoffs |
 | `BANDSTOP` | Between LOWCUTOFF and HIGHCUTOFF | Both cutoffs |
 
-> Output: one row per coefficient (`ROW_I` 0..N), with `MAG` = coefficient value and `DESCRIPTION` on row 0 only.
+> Output: one row per coefficient (`ROW_I` 0..N), with `FilterMag` = coefficient value and `DESCRIPTION` on row 0 only.
 
 ---
 
@@ -419,3 +432,4 @@ SELECT COUNT(*) FROM orders1 WHERE TD_ISFINITE(sales) = 0;
 | `TD_ISNAN(x)` | x is NaN (Not a Number) | x is finite or infinite |
 
 > Input: FLOAT. These are typically used to gate data before passing it to `EXECUTE FUNCTION INTO ART` pipelines.
+> `CAST('Infinity' AS FLOAT)` fails with error 2620 — special values must come from a computation (e.g. `1.0/0.0`), not a literal.

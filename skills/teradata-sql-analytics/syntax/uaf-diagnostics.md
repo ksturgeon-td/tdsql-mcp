@@ -138,6 +138,7 @@ SELECT * FROM fm_art;
 | `F_CRITICAL`, `F_CRITICAL_P`, `NULL_HYPOTH` | Critical value, p-value, and test result |
 
 > `NULL_HYPOTH`: `ACCEPT` = all slope coefficients are zero; `REJECT` = non-zero slope coefficients.
+> On 20.00.31.103 the value is returned with a trailing stray character (also seen in TD_MAMEAN); compare with `LIKE 'REJECT%'`.
 
 ---
 
@@ -223,7 +224,7 @@ SELECT * FROM dw_art;
 
 | Column | Description |
 |--------|-------------|
-| `NUM_SAMPLES`, `EXPLANATORY_COUNT`, `CONSTANT`, `METHOD` | Test configuration |
+| `NUM_SAMPLES`, `EXPLANATORY_COUNT`, `CONSTANT`, `"METHOD"` | Test configuration. `METHOD` is a reserved word (quote it in queries); on 20.00.31.103 the value `DW_FORMULA` is returned truncated as `DW_FORMUL` |
 | `DW_VALUE` | Durbin-Watson statistic (0–4; ~2 = no serial correlation) |
 | `DL_VALUE`, `DU_VALUE` | Lower/upper critical bounds from internal DW tables |
 | `SIGNIFICANCE_LEVEL` | Significance level used |
@@ -270,7 +271,7 @@ SELECT * FROM bg_art;
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| `EXPLANATORY_COUNT` | Yes | Number of explanatory variables in original regression |
+| `EXPLANATORY_COUNT` | Yes | Number of regression coefficients including the intercept; minimum 2 (one explanatory variable plus a constant is 2) |
 | `RESIDUAL_MAXLAGS` | Yes | Maximum lag for auxiliary regression; determines degrees of freedom |
 | `SIGNIFICANCE_LEVEL` | No | Default `0.05` |
 
@@ -283,6 +284,8 @@ SELECT * FROM bg_art;
 | `P_VALUE`, `CRITICAL_VALUE`, `CRITICAL_P` | Test statistics and critical values |
 | `SIGNIFICANCE_LEVEL` | Significance level used |
 | `NULL_HYPOTHESIS` | `ACCEPT` (no serial correlation) / `REJECT` (serial correlation present) |
+
+> `ROW_I` starts at 1 in TD_BREUSCH_GODFREY and TD_BREUSCH_PAGAN_GODFREY (unlike most UAF diagnostics which use 0).
 
 ---
 
@@ -342,7 +345,7 @@ SELECT * FROM portman_art;
 | `DEGREES_FREEDOM` | Effective df = MAXLAG − model DEGREES_FREEDOM input |
 | `PORTMAN_VALUE` | Portmanteau test statistic |
 | `P_VALUE`, `CHISQUARE_VALUE`, `CRITICAL_P` | Test statistics and critical values |
-| `NULL_HYPOTH` | `ACCEPT` (white noise, model adequate) / `REJECT` (not white noise — model missing structure) |
+| `NULL_HYPOTH` | Text beginning `ACCEPT:` (for example "Apparent White Noise") or `REJECT:` ("Not White Noise."); test with `LIKE 'ACCEPT%'` |
 
 ---
 
@@ -379,7 +382,7 @@ SELECT * FROM wg_art;
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| `VARIABLES_COUNT` | Yes | Number of explanatory variables in the payload (not counting the residual column) |
+| `VARIABLES_COUNT` | Yes | Total number of payload fields, including the residual column; must be greater than 1 |
 | `SIGNIFICANCE_LEVEL` | Yes | Significance level for the test |
 
 ### Output schema (ARTPRIMARY, single layer)
@@ -494,13 +497,13 @@ SELECT * FROM gq_art;
 | Column | Description |
 |--------|-------------|
 | `TOTAL_NUM_SAMPLES`, `VARIABLES_COUNT` | Total samples and variable count |
-| `NUM_SAMPLES1`, `NUM_SAMPLES2`, `OMITTED` | Subset sizes and omitted point count |
+| `NUM_SAMPLES1`, `NUM_SAMPLES2`, `OMMITTED` | Subset sizes and omitted point count (the column name is misspelled with two Ms) |
 | `DEGREES_FREEDOM_1`, `DEGREES_FREEDOM_2` | F-test degrees of freedom |
 | `GQ_STATISTIC`, `GQ_PVALUE` | Goldfeld-Quandt F-statistic and p-value |
 | `F_CRITICAL_VALUE_HI` | Upper F-critical (NULL when TEST=LESS) |
 | `F_CRITICAL_VALUE_LOW` | Lower F-critical (NULL when TEST=GREATER) |
-| `TEST` | Test variant used |
-| `NULL_HYPOTHESIS` | `ACCEPT HYPOTH:MEANING THERE IS HOMOSCEDASTIC VARIANCE` / `REJECT HYPOTH:MEANING THERE IS HETEROSCEDASTIC VARIANCE` |
+| `TEST` | Test variant used (returned with a trailing NUL character on 20.00.31.103) |
+| `NULL_HYPOTHESIS` | `ACCEPT HYPOTH:MEANING THERE IS HOMOSCEDASTIC VARIANCE` / `REJECT HYPOTH:MEANING THERE IS HETEROSCEDASTIC VARIANCE`, each followed by a trailing NUL; compare with `LIKE` |
 
 ---
 
@@ -550,13 +553,13 @@ EXECUTE FUNCTION TD_EXTRACT_RESULTS(
 | `Bartlett_TEST_STATS` | Maximum deviation of cumulative periodogram from reference line y = 2x |
 | `P_VALUE` | Test p-value |
 | `SIGNIFICANCE_LEVEL` | Significance level used |
-| `TEST_RESULT` | `ACCEPT:No Significant Periodicity Encountered` / `Significant Periodicity Present` |
+| `TEST_RESULT` | `ACCEPT:No Significant Periodicity Encountered` / `REJECT:Significant Periodicity Present` |
 
 **ARTCPDATA** (retrieve with TD_EXTRACT_RESULTS; use with TD_PLOT):
 
 | Column | Description |
 |--------|-------------|
-| `INDEX_K`, `NUM_SAMPLES` | Frequency index and sample count |
+| `INDEX_K`, `PERIODICITIES`, `NUM_SAMPLES`, `SIGNIFICANCE_LEVEL` | Frequency index; the frequency k/n (despite the name, not the period); sample count; significance level used |
 | `GAMMAK_SQUARE`, `ALPHA_K`, `BETA_K`, `G_K` | Intermediate periodogram values |
 | `MIDDLE_SIGNIF_LINE`, `UPPER_SIGNIF_BAND`, `LOWER_SIGNIF_BAND` | Reference line and confidence band for plotting |
 
@@ -649,6 +652,6 @@ SELECT * FROM resid_mean_art;
 |--------|-------------|
 | `NUM_SAMPLES`, `SIGNIFICANCE_LEVEL` | Sample count and significance level |
 | `RESID_MEAN`, `RESID_VARIANCE` | Calculated residual mean and variance |
-| `TSTAT_CALC`, `P_VALUE` | T-statistic and p-value |
-| `TSTAT_CRITICAL`, `TSTAT_CRITICAL_P` | Critical T-value and corresponding p-value |
-| `NULL_HYPOTH` | `ACCEPT` (mean ≈ 0, consistent with white noise) / `REJECT` (non-zero mean) |
+| `TSTAT_CALC`, `P_VALUE` | T-statistic and P(T ≤ t), the cumulative probability (not a two-sided p-value; for t = 1.98 on 17 df it is 0.968) |
+| `TSTAT_CRITICAL`, `TSTAT_CRITICAL_P` | Lower-tail critical T-value (negative, e.g. −2.110) and the corresponding cumulative probability |
+| `NULL_HYPOTH` | Text beginning `ACCEPT:` ("The residual series appears to be a white noise series with zero mean.") or `REJECT:`; test with `LIKE` |

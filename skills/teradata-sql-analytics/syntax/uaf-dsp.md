@@ -36,7 +36,7 @@ EXECUTE FUNCTION INTO VOLATILE ART(dfftRes1) TD_DFFT(SERIES_SPEC(series1 ...), .
 EXECUTE FUNCTION INTO VOLATILE ART(dfftRes2) TD_DFFT(SERIES_SPEC(series2 ...), ...);
 EXECUTE FUNCTION INTO VOLATILE ART(freqRes)
   TD_BINARYSERIESOP(ART_SPEC(TABLE_NAME(dfftRes1)), ART_SPEC(TABLE_NAME(dfftRes2)),
-    FUNC_PARAMS(MATHOP(MULTIPLY)), INPUT_FMT(INPUT_MODE(MATCH)));
+    FUNC_PARAMS(MATHOP(MUL)), INPUT_FMT(INPUT_MODE(MATCH)));  -- MULTIPLY is invalid; accepted value is MUL
 EXECUTE FUNCTION INTO VOLATILE ART(convResult) TD_IDFFT(ART_SPEC(TABLE_NAME(freqRes)), ...);
 -- Simpler: use TD_CONVOLVE instead
 ```
@@ -106,13 +106,13 @@ Used by TD_DFFT, TD_DFFT2, TD_DFFTCONV, TD_DFFT2CONV, TD_WINDOWDFFT.
 
 | Parameter | Options | Default | Notes |
 |-----------|---------|---------|-------|
-| `ZERO_PADDING_OK` | 1 \| 0 | 1 | Add zeros for efficient FFT size; use default |
+| `ZERO_PADDING_OK` | 1 \| 0 | 1 | Add zeros for efficient FFT size (default 1); a 3-row matrix is padded to 4 — set to 0 to prevent size change |
 | `FREQ_STYLE` | K_INTEGRAL, K_SAMPLE_RATE, K_RADIANS, K_HERTZ | K_INTEGRAL | K_HERTZ requires HERTZ_SAMPLE_RATE |
 | `HERTZ_SAMPLE_RATE` | FLOAT | — | Required with K_HERTZ only |
 | `ALGORITHM` | COOLEY_TUKEY \| SINGLETON | internal planner | Omit for best performance |
-| `HUMAN_READABLE` | 1 \| 0 | 1 | 1 = symmetric around 0 (−3,−2,−1,0,1,2,3); 0 = sequential from 0 (0,1,2,3) |
+| `HUMAN_READABLE` | 1 \| 0 | 1 | 1 = symmetric around 0; for even N returns N+1 rows (−N/2 to +N/2, Nyquist at both ends); 0 = sequential from 0 |
 
-**OUTPUT_FMT CONTENT options** (TD_DFFT, TD_DFFT2, TD_IDFFT, TD_IDFFT2, TD_DFFTCONV, TD_DFFT2CONV, TD_WINDOWDFFT):
+**OUTPUT_FMT CONTENT options** (TD_DFFT, TD_DFFT2, TD_IDFFT2, TD_DFFTCONV, TD_DFFT2CONV, TD_WINDOWDFFT; **not TD_IDFFT** — `OUTPUT_FMT` is unsupported there, error 3706):
 
 | Series type | CONTENT options | Default |
 |-------------|-----------------|---------|
@@ -120,8 +120,11 @@ Used by TD_DFFT, TD_DFFT2, TD_DFFTCONV, TD_DFFT2CONV, TD_WINDOWDFFT.
 | Multivariate | MULTIVAR_COMPLEX, MULTIVAR_AMPL_PHASE, MULTIVAR_AMPL_PHASE_RADIANS, MULTIVAR_AMPL_PHASE_DEGREES | MULTIVAR_COMPLEX |
 
 Output columns per content type:
-- `COMPLEX` / `MULTIVAR_COMPLEX` → `REAL_PayloadName` + `IMAGINARY_PayloadName`
+- `COMPLEX` / `MULTIVAR_COMPLEX` → `REAL_PayloadName` + `IMAG_PayloadName`
 - `AMPL_PHASE*` / `MULTIVAR_AMPL_PHASE*` → `AMPLITUDE_PayloadName` + `PHASE_PayloadName`
+
+> **FFT amplitudes are unnormalized.** A unit-amplitude cosine of period 8 with N=8 produces amplitude 4.0 (= N/2) at its frequency. Divide by N/2 to normalize.
+> **Inverse transforms stack prefixes.** `TD_IDFFT` fed `REAL_v` / `IMAG_v` returns `REAL_REAL_v` / `IMAG_IMAG_v`; `TD_DFFTCONV` returns plain `AMPLITUDE_v`. The guide does not describe the inverse column names.
 
 ---
 
@@ -381,7 +384,7 @@ Inverse DWT — reconstructs original signal from wavelet decomposition coeffici
 | **Primary input** | `SERIES_SPEC` (approx + detail fields, MULTIVAR_REAL) | `ART_SPEC` (from TD_DWT2D) — syntax shows MATRIX_SPEC but examples use ART_SPEC |
 | **Custom filter** | Optional 2nd `SERIES_SPEC` | Optional `SERIES_SPEC` |
 | **Output axes** | ROW_I | ROW_I (doc likely incomplete — probably ROW_I + COLUMN_I) |
-| **Output column** | `MAGNITUDE` (reconstructed signal) | `MAGNITUDE` |
+| **Output column** | `MAGNITUDE_1` (reconstructed signal; numbered per output series) | `MAGNITUDE` (not tested) |
 | **Algorithm direction** | — | Horizontal (row) first, then vertical — reverse of TD_DWT2D |
 | **LEVEL param** | Listed in param table but absent from syntax block — doc inconsistency | Not present |
 | **PART param** | Supported | Not supported |
@@ -441,7 +444,7 @@ Mixing: MULTIVAR_REAL + REAL (one of each) is allowed.
 - Either input MULTIVAR → output MULTIVAR_COMPLEX
 
 **Output schema:**
-- TD_CONVOLVE: derived-series-identifier + ROW_I + `REAL_PayloadName` + `IMAGINARY_PayloadName`
+- TD_CONVOLVE: derived-series-identifier + ROW_I + `REAL_PayloadName` + `IMAG_PayloadName`
 - TD_CONVOLVE2: derived-matrix-identifier + ROW_I + COLUMN_I + REAL/IMAG or AMPLITUDE/PHASE columns
 
 ARTPRIMARY — display with SELECT. No additional layers.
@@ -540,9 +543,9 @@ Estimates the line spectrum by computing sinusoidal component magnitudes. Simple
 | `FREQ_STYLE` | K_INTEGRAL, K_SAMPLE_RATE, K_RADIANS, K_HERTZ, K_PERIODICITY | K_INTEGRAL |
 | `HERTZ_SAMPLE_RATE` | FLOAT | — (required with K_HERTZ) |
 | `ZERO_PADDING_OK` | 1 \| 0 | 1 |
-| `INCLUDE_COEFF` | 1 \| 0 | 0 — include αk and βk coefficient columns in output |
+| `INCLUDE_COEFF` | 1 \| 0 | 0 — add `DFFT_COEFF_REAL_<field>` and `DFFT_COEFF_IMAG_<field>`: the raw (unnormalized) FFT coefficient X_k |
 
-**Formula:** magnitude at frequency k = `(n/2) × (αk² + βk²)`
+**Formula:** `SPECTRAL_DENSITY` at frequency k = `|X_k|² / n` (e.g., 2.0 for a unit cosine of period 8 with n=8; raw coefficient value is 4.0)
 
 Same output schema as TD_POWERSPEC (SPECTRAL_DENSITY_PayloadName), same output type logic. No INPUT_FMT or OUTPUT_FMT.
 
@@ -614,7 +617,7 @@ Transforms time series to symbols using Piecewise Aggregate Approximation (PAA) 
 | `OUTPUT_TYPE(STRING\|BITMAP\|O_CHARS)` | Both | Symbol output format | STRING |
 | `ALPHABET_SIZE(n)` | Both | Symbol count; range [2, 20]; alphabet is letters a–t | 4 (abcd) |
 | `MEAN(f [,...])` | Both | Pre-supply global mean per payload; nth value → nth payload; single value → all payloads | computed |
-| `STD_DEV(f [,...])` | Both | Pre-supply global std dev per payload | computed |
+| `STD_DEV(f [,...])` | Both | Pre-supply global std dev per payload (function computes **sample** std dev, `STDDEV_SAMP`) | computed |
 | `BREAKPOINTS(f [,...])` | Both | Custom SAX breakpoints | — |
 | `CODE_STATS(1\|0)` | Both | Include Mean_PayloadName + Std_dev_PayloadName in output | 0 |
 | `POINTS_PER_SYMBOL(n)` | GLOBAL only | Data points compressed to one SAX symbol; > 0 | 1 |
