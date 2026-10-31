@@ -59,14 +59,19 @@ numerator / NULLIFZERO(denominator)
 -- Cast to fixed decimal
 CAST(expr AS DECIMAL(10, 2))
 
--- Format as string with commas / specific format
-CAST(expr AS VARCHAR(20) FORMAT 'Z,ZZ9.99')
+-- Format as a string: apply the format to the number first, then cast to a string
+CAST(CAST(expr AS FORMAT 'Z,ZZ9.99') AS VARCHAR(20))
+-- A value too large for the format returns asterisks, not an error:
+-- 'Z,ZZ9.99' holds up to 9,999.99; 12345.67 returns ********
 ```
 
 ## Random Numbers
 ```sql
--- Pseudo-random float in [0, 1)
-RANDOM(0, 100)          -- random integer between 0 and 100 inclusive
+-- Random integer between 0 and 100, inclusive (both arguments required)
+RANDOM(0, 100)
+
+-- Pseudo-random float in [0, 1): scale an integer
+CAST(RANDOM(0, 999999999) AS FLOAT) / 1000000000.0
 ```
 
 ## Statistical Functions (aggregate context)
@@ -79,9 +84,10 @@ STDDEV_SAMP(col)        -- sample standard deviation
 VAR_POP(col)            -- population variance
 VAR_SAMP(col)           -- sample variance
 
--- Approximate percentile (TD Vantage)
-APPROX_PERCENTILE(col, 0.5)   -- median
-APPROX_PERCENTILE(col, 0.95)  -- 95th percentile
+-- Exact percentiles
+PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY col)    -- median
+PERCENTILE_DISC(0.25) WITHIN GROUP (ORDER BY col)   -- 25th percentile (discrete)
+-- APPROX_PERCENTILE is not available on Teradata 20.00.30.76
 ```
 
 ## Type Conversion

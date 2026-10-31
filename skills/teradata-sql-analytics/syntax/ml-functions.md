@@ -4,6 +4,8 @@ In-database machine learning via Vantage analytic functions. Models train and sc
 
 > **Train/Predict pattern:** ML functions follow a two-phase pattern. The Train function learns a model from training data and outputs a model table. The Predict function takes that model table as a `DIMENSION` input and applies it to new data. Save the model output via `CREATE TABLE AS (...) WITH DATA` or `INSERT/SELECT` so it can be reused for scoring without retraining.
 
+> **OUT TABLE and primary output:** When a function call includes an `OUT TABLE` clause, some drivers return an empty primary result set even though the function produced one. To capture the primary output, wrap the call: `CREATE TABLE db.result AS (SELECT * FROM TD_SomeFunction(... OUT TABLE ...) AS t) WITH DATA`.
+
 > **Tip:** Use `get_syntax_help("data-exploration")` for statistical prep, `get_syntax_help("data-prep")` for feature engineering, and `get_syntax_help("data-cleaning")` for imputation before training.
 
 ---
@@ -29,7 +31,8 @@ SELECT * FROM TD_DecisionForest(
         [ ModelType('Classification'|'Regression') ] -- default 'Regression'
         [ MaxDepth(5) ]                              -- default 5; non-negative integer; tree stops at this depth
         [ MinNodeSize(1) ]                           -- default 1; stop splitting when node has <= this many rows
-        [ NumTrees(-1) ]                             -- default -1 (auto); max 65536; if specified, must be >= num AMPs
+        [ NumTrees(-1) ]                             -- default -1 (auto); max 65536; if specified, must be >= the number
+                                                     -- of AMPs that hold data from the input table (not HASHAMP()+1)
         [ TreeSize(-1) ]                             -- default -1 (auto); rows per tree input sample
         [ CoverageFactor(1.0) ]                      -- default 1.0 (100%); dataset coverage level per tree
         [ MinImpurity(0.0) ]                         -- default 0.0; stop splitting at or below this impurity
@@ -39,16 +42,16 @@ SELECT * FROM TD_DecisionForest(
 ) AS t;
 ```
 
-> **NumTrees note:** When specified, actual tree count = `Num_AMPs_with_data × (NumTrees / Num_AMPs_with_data)`. Use `SELECT HASHAMP()+1;` to get AMP count. For small datasets, distribute data to one AMP by setting all rows to the same primary index value.
+> **NumTrees note:** When specified, must be >= the number of AMPs **with data** (not the total from `SELECT HASHAMP()+1`). The error message reports the required minimum. Actual tree count = `Num_AMPs_with_data × (NumTrees / Num_AMPs_with_data)`. For small datasets, distribute data to one AMP by setting all rows to the same primary index value.
 
 **Model output schema** (save this table for use in Predict):
 
 | Column | Type | Description |
 |--------|------|-------------|
 | `task_index` | SMALLINT | AMP that produced this tree |
-| `tree_num` | SMALLINT | Tree identifier within the AMP |
+| `tree_num` | INTEGER | Tree identifier within the AMP |
 | `tree_order` | INTEGER | Sequence number for multi-row JSON chunks |
-| `classification_tree` or `regression_tree` | VARCHAR(16000) | JSON decision tree; split across rows when > 16000 bytes |
+| `classification_tree` or `regression_tree` | VARCHAR(64000) | JSON decision tree; split across rows for large trees |
 
 ### Predict
 
@@ -172,6 +175,13 @@ SELECT * FROM TD_GLM(
 | `estimate` | FLOAT | Predictor weight or numeric metric value |
 | `value` | VARCHAR | String metric value (e.g., `SQUARED_ERROR`, `L2`) |
 
+> **Model table gotchas:** `value` is a reserved word — quote it in queries (`"value"`). Metric rows (negative `attribute`) carry trailing NUL characters in `predictor` and `value`; filter with `OREPLACE(predictor, CHR(0), '')` to match by name:
+> ```sql
+> SELECT OREPLACE(predictor, CHR(0), '') AS metric, estimate, OREPLACE("value", CHR(0), '') AS metric_text
+> FROM db.glm_model
+> WHERE OREPLACE(predictor, CHR(0), '') IN ('MSE', 'Loss Function', 'Number of Iterations');
+> ```
+
 **Model output — Micromodeling** (partition column prepended):
 
 | Column | Type | Description |
@@ -186,16 +196,15 @@ SELECT * FROM TD_GLM(
 
 | Column | Type | Description |
 |--------|------|-------------|
-| `iteration` | INTEGER | Iteration number |
-| `num_rows` | BIGINT | Rows processed |
-| `eta` | FLOAT | Learning rate for this iteration |
+| `iterNum` | INTEGER | Iteration number |
 | `loss` | FLOAT | Loss value |
-| `best_loss` | FLOAT | Best loss up to this iteration |
+| `eta` | FLOAT | Learning rate for this iteration |
+| `bias` | FLOAT | Intercept (bias) value at this iteration |
 | `Step` | INTEGER | [StepwiseDirection only] Step number |
 | `SubStep` | INTEGER | [StepwiseDirection only] Feature sequence number |
 | `Description` | VARCHAR | [StepwiseDirection only] Stage description; `+feature` = added, `-feature` = removed |
 | `Score` | FLOAT | [StepwiseDirection only] Model score at each substep |
-| `Model` | VARCHAR | [StepwiseDirection only] Variable names in model at this step |
+| `Model` | VARCHAR | [StepwiseDirection only] Column positions in model at this step (e.g. `'[1]','[2]'`); not variable names |
 
 **AttributeTable schema** (Micromodeling):
 
@@ -249,12 +258,13 @@ SELECT * FROM TD_GLMPredict(
 
 | Column | Type | Description |
 |--------|------|-------------|
+| `partition_by_column` | varies | [Micromodeling only] Model identifier; returned first |
 | `id_column` | any | Unique observation identifier |
-| `partition_by_column` | varies | [Micromodeling only] Model identifier |
 | `prediction` | FLOAT | Predicted value |
 | `prob` | FLOAT | [When `OutputProb('true')` and no `Responses`] Probability of predicted class (Binomial only) |
 | `prob_0` | FLOAT | [When `Responses` specified] Probability of class 0 |
 | `prob_1` | FLOAT | [When `Responses` specified] Probability of class 1 |
+| `error_code` | varies | [Micromodeling only] NULL when the row was scored without error |
 | `accumulate_column(s)` | any | Columns copied from InputTable |
 
 ---
@@ -303,7 +313,7 @@ SELECT * FROM TD_KMeans(
 | `TD_SIZE_KMEANS` | BIGINT | Number of points in this cluster |
 | `TD_WITHINSS_KMEANS` | REAL | Within-cluster sum of squares for this cluster |
 | `<id_column>` | BYTEINT | Copied from InputTable; always NULL in centroid output |
-| `TD_MODELINFO_KMEANS` | VARCHAR(128) | Model summary: Converged, NumIterations, NumClusters, Total_WithinSS, Between_SS, InitialCentroidsMethod |
+| `TD_MODELINFO_KMEANS` | VARCHAR(128) | Model summary: Converged, NumIterations, NumClusters, Total_WithinSS, Between_SS, InitialCentroidsMethod — returned as text strings (e.g. `Total_WithinSS : 1.84E+02`); parse with REGEXP or STRTOK to extract numeric values for the elbow method |
 
 **Output — `OutputClusterAssignment('true')` — row-level assignment:**
 
@@ -429,6 +439,8 @@ SELECT * FROM TD_NaiveBayes(
 
 **Model output schema** (save via `CREATE TABLE AS (...) WITH DATA` or `INSERT/SELECT`):
 
+> **Model table gotchas:** `class`, `type`, and `sum` are reserved words — quote them in queries: `SELECT "class", variable, "type", category, cnt, "sum", totalcnt, smoothingfactor FROM db.nb_model`.
+
 | Column | Type | Description |
 |--------|------|-------------|
 | `class` | VARCHAR | Response value |
@@ -552,21 +564,18 @@ SELECT * FROM TD_OneClassSVMPredict(
     ON { db.table | db.view | (query) } AS ModelTable DIMENSION
     USING
         IDColumn('id_col')                           -- required; unique row identifier
-        [ OutputProb('false') ]                      -- default false
-        [ Responses('0'[,'1']) ]                     -- requires OutputProb('true'); 0 = outlier, 1 = normal
         [ Accumulate({ 'col' | col_range }[,...]) ]
 ) AS t;
 ```
+
+> **Note:** `OutputProb` and `Responses` are not available for `TD_OneClassSVMPredict` on Teradata 20.00.30.76 — `OutputProb('true')` fails with error 7810 ("OutputProb argument is NOT allowed for regression").
 
 **Predict output columns:**
 
 | Column | Type | Description |
 |--------|------|-------------|
 | `id_column` | any | Unique observation identifier |
-| `prediction` | FLOAT | `0` = outlier, `1` = normal observation |
-| `prob` | FLOAT | When `OutputProb('true')` and no `Responses`; probability of predicted class |
-| `prob_0` | FLOAT | When `Responses` specified; probability of class 0 (outlier) |
-| `prob_1` | FLOAT | When `Responses` specified; probability of class 1 (normal) |
+| `prediction` | FLOAT | `1` = normal observation, `0` = outlier |
 | `accumulate_column(s)` | any | Columns copied from InputTable |
 
 ---
@@ -581,7 +590,7 @@ Linear SVM for binary classification (hinge loss) and regression (epsilon-insens
 - Classification: response values must be 0 or 1 (binary only)
 - No `OUT TABLE` for the model — capture via `CREATE TABLE AS (...) WITH DATA` or `INSERT/SELECT`
 - `Nesterov` defaults to `false` (unlike TD_GLM which defaults to `true`)
-- `ModelType` must match between Train and Predict
+- `ModelType` must match between Train and Predict (not enforced by the engine — a mismatch returns FLOAT silently; contrast with `TD_XGBoostPredict`, which rejects it with error 7810)
 
 ### Train
 
@@ -707,11 +716,11 @@ SELECT * FROM TD_XGBoost(
 | Column | Type | Description |
 |--------|------|-------------|
 | `task_index` | SMALLINT | AMP that produced this tree |
-| `tree_num` | SMALLINT | Boosted tree identifier |
-| `iter` | SMALLINT | Boosting round number |
-| `class_num` | SMALLINT | [Classification only] Class index; range [0, K-1] for K classes |
-| `tree_order` | SMALLINT | Sequence number for multi-chunk JSON |
-| `regression_tree` or `classification_tree` | VARCHAR(32000) | JSON decision tree per chunk |
+| `tree_num` | INTEGER | Boosted tree identifier |
+| `iter` | INTEGER | Boosting round number |
+| `class_num` | INTEGER | [Classification only] Class index; range [0, K-1] for K classes |
+| `tree_order` | INTEGER | Sequence number for multi-chunk JSON |
+| `regression_tree` or `classification_tree` | VARCHAR(64000) | JSON decision tree per chunk |
 
 **MetaInformationTable schema** (OUT TABLE — training accuracy per iteration):
 
@@ -731,7 +740,8 @@ SELECT * FROM TD_XGBoostPredict(
     ON { db.table | db.view | (query) } AS ModelTable DIMENSION
     USING
         IDColumn({ 'id_col' | id_col_range })        -- required; no double-quoted names
-        [ ModelType('Classification'|'Regression') ] -- default: DOUBLE output; 'Classification' = INTEGER output
+        [ ModelType('Classification'|'Regression') ] -- default 'Regression' (DOUBLE output); required for a classification
+                                                     -- model — the default fails with error 7810; 'Classification' = INTEGER output
         [ NumParallelTrees(1000) ]                   -- default 1000; limits trees loaded; fewer = faster but less accurate
                                                      -- also accepts legacy name NumBoostedTrees
         [ NumBoostRounds(10) ]                       -- default 10; limits iterations per tree; fewer = faster but less accurate

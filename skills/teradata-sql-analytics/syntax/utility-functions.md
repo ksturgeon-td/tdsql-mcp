@@ -13,7 +13,9 @@ Adds a column of unique row identifiers to the input table.
 SELECT * FROM TD_FillRowID(
     ON { db.table | db.view | (query) } AS InputTable
     PARTITION BY ANY
-    ORDER BY order_col                                -- optional: ensures deterministic ID assignment
+    ORDER BY order_col                                -- optional: no effect on the IDs was observed
+    -- The IDs are unique but not sequential and not ordered by any column.
+    -- For 1..N in a defined order use ROW_NUMBER() OVER (ORDER BY order_col) instead.
     USING
         RowIDColumnName('row_id')                     -- optional: name for the new row ID column
                                                       -- default: 'row_id'
@@ -36,9 +38,9 @@ SELECT * FROM TD_NumApply(
         TargetColumns('col1', 'col2')                 -- required; explicit columns or range e.g. '[1:5]'
         ApplyMethod('LOG')                            -- required; options:
                                                       --   EXP      — e^x
-                                                      --   LOG      — log base 10 of x
+                                                      --   LOG      — natural logarithm of x (LOG of 10 returns 2.3026; for base 10 use the SQL LOG() function)
                                                       --   SIGMOID  — sigmoid function (see SigmoidStyle)
-                                                      --   SININV   — inverse hyperbolic sine
+                                                      --   SININV   — inverse sine (arcsine) in degrees; 0.5 returns 30.0; input outside [-1, 1] returns NULL
                                                       --   TANH     — hyperbolic tangent
         InPlace('true')                               -- optional: overwrite target columns; default 'true'
 ) AS t;
@@ -50,12 +52,14 @@ SELECT * FROM TD_NumApply(
     USING
         TargetColumns('col1', 'col2')
         ApplyMethod('SIGMOID')
-        SigmoidStyle('logit')                         -- required with SIGMOID; default: 'logit'
-                                                      -- options: 'logit', 'modifiedlogit', 'tanh'
-        InPlace('false')                              -- adds new cols alongside originals
-        OutputColumns('col1_sigmoid', 'col2_sigmoid') -- optional: default is target_column_operator
-                                                      -- required if target_column_operator > 128 chars
-        Accumulate('id_col', 'date_col')              -- optional: columns or range to pass through
+        SigmoidStyle('logit')                         -- optional with SIGMOID; default: 'logit'
+                                                      -- options: 'logit' (0.7311 at x=1), 'modifiedlogit' (0.4621),
+                                                      --          'tanh' (0.7616 at x=1)
+        InPlace('false')                              -- returns new columns; original columns are returned
+                                                      -- only if listed in Accumulate
+        OutputColumns('col1_sigmoid', 'col2_sigmoid') -- optional: default is operator_target_column (e.g. TANH_x)
+                                                      -- required if operator_target_column > 128 chars
+        Accumulate('id_col', 'col1', 'col2')          -- include target columns here to keep them beside the new ones
 ) AS t;
 ```
 
@@ -100,9 +104,10 @@ SELECT * FROM TD_StrApply(
     USING
         TargetColumns('col1', 'col2')
         StringOperation('TOUPPER')
-        InPlace('false')                              -- adds new cols alongside originals
-        OutputColumns('col1_upper', 'col2_upper')     -- optional: default is target_column_operator
-                                                      -- required if target_column_operator > 128 chars
+        InPlace('false')                              -- returns new columns; original columns are returned
+                                                      -- only if listed in Accumulate
+        OutputColumns('col1_upper', 'col2_upper')     -- optional: default is operator_target_column (e.g. TOUPPER_col1)
+                                                      -- required if operator_target_column > 128 chars
         Accumulate('id_col')                          -- optional: columns or range to pass through
 ) AS t;
 

@@ -5,7 +5,7 @@
 function() OVER (
     [PARTITION BY col1, col2]
     [ORDER BY col3 [ASC|DESC]]
-    [ROWS|RANGE BETWEEN frame_start AND frame_end]
+    [ROWS BETWEEN frame_start AND frame_end]
 )
 ```
 
@@ -16,7 +16,10 @@ RANK()       OVER (PARTITION BY dept ORDER BY salary DESC)  -- gaps on ties
 DENSE_RANK() OVER (PARTITION BY dept ORDER BY salary DESC)  -- no gaps on ties
 PERCENT_RANK() OVER (ORDER BY col)                          -- 0.0 to 1.0 relative rank
 CUME_DIST()    OVER (ORDER BY col)                          -- cumulative distribution
-NTILE(4)       OVER (ORDER BY col)                          -- assign quartile (1–4)
+-- NTILE(n) is not supported. Use QUANTILE (zero-based: 0 to n-1, no OVER clause):
+-- QUANTILE(4, col)
+-- One-based equivalent (add a unique tiebreaker to ORDER BY):
+-- 1 + CAST(((ROW_NUMBER() OVER (ORDER BY col, id) - 1) * 4) / COUNT(*) OVER () AS INTEGER)
 ```
 
 ## Offset Functions
@@ -25,6 +28,8 @@ LAG(col, n, default)  OVER (PARTITION BY ... ORDER BY ...)  -- previous row valu
 LEAD(col, n, default) OVER (PARTITION BY ... ORDER BY ...)  -- next row value
 FIRST_VALUE(col)      OVER (PARTITION BY ... ORDER BY ...)
 LAST_VALUE(col)       OVER (PARTITION BY ... ORDER BY ... ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
+-- Note: without an explicit frame, LAST_VALUE returns the current row, not the last row
+-- of the partition. Always include the full-partition frame shown above.
 ```
 
 ## Running / Moving Aggregates
@@ -35,7 +40,7 @@ SUM(amount) OVER (ORDER BY event_date ROWS UNBOUNDED PRECEDING)
 -- Running average
 AVG(amount) OVER (ORDER BY event_date ROWS UNBOUNDED PRECEDING)
 
--- 7-day moving average (current row + 6 preceding)
+-- 7-row moving average (current row + 6 preceding); equals 7 days only when there is exactly one row per day
 AVG(amount) OVER (ORDER BY event_date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW)
 
 -- Partition total (for % of total calculations)
@@ -48,7 +53,15 @@ SUM(amount) OVER (PARTITION BY dept)
 | `ROWS UNBOUNDED PRECEDING` | From first row in partition to current |
 | `ROWS BETWEEN n PRECEDING AND CURRENT ROW` | Rolling window of n+1 rows |
 | `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING` | Entire partition |
-| `RANGE BETWEEN INTERVAL '7' DAY PRECEDING AND CURRENT ROW` | Date-based range window |
+
+**Date-based windows:** `ROWS` counts rows, not days. For a calendar-day window, self-join on the date range:
+```sql
+-- Sum current day and 3 days before it (calendar days, handles gaps)
+SELECT a.id, a.dt, SUM(b.amount) AS sum_window
+FROM db.t a
+JOIN db.t b ON b.id = a.id AND b.dt BETWEEN a.dt - 3 AND a.dt
+GROUP BY a.id, a.dt;
+```
 
 ## QUALIFY — Filter on Window Results
 Teradata's `QUALIFY` applies a filter on window function output without a subquery:
@@ -64,8 +77,9 @@ FROM db.sales
 QUALIFY RANK() OVER (PARTITION BY category ORDER BY revenue DESC) <= 3;
 
 -- Flag rows where value jumps more than 10% from previous
-SELECT *, value / LAG(value) OVER (PARTITION BY id ORDER BY dt) - 1 AS pct_chg
-FROM db.series
+-- CAST to FLOAT first — integer division rounds every change to 0
+SELECT t.*, CAST("value" AS FLOAT) / LAG("value") OVER (PARTITION BY id ORDER BY dt) - 1 AS pct_chg
+FROM db.series t
 QUALIFY ABS(pct_chg) > 0.10;
 ```
 
@@ -77,8 +91,9 @@ SELECT * FROM db.t
 QUALIFY ROW_NUMBER() OVER (PARTITION BY key_col ORDER BY updated_at DESC) = 1;
 
 -- Running total that resets per partition
-SELECT dept, month, sales,
-       SUM(sales) OVER (PARTITION BY dept ORDER BY month ROWS UNBOUNDED PRECEDING) AS ytd
+-- Note: month and value are reserved words — always double-quote them
+SELECT dept, "month", sales,
+       SUM(sales) OVER (PARTITION BY dept ORDER BY "month" ROWS UNBOUNDED PRECEDING) AS ytd
 FROM db.monthly_sales;
 
 -- Period-over-period comparison
@@ -87,8 +102,8 @@ SELECT dt, revenue,
        revenue - LAG(revenue, 1, 0) OVER (ORDER BY dt) AS delta
 FROM db.daily_revenue;
 
--- Percentile bucket (decile)
-SELECT *, NTILE(10) OVER (ORDER BY score) AS decile FROM db.scores;
+-- Percentile bucket (decile) — QUANTILE returns zero-based buckets (0–9)
+SELECT s.*, QUANTILE(10, score) AS decile FROM db.scores s;
 
 -- Gap-and-island: number consecutive groups
 SELECT id, dt,

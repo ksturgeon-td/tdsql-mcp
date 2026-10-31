@@ -23,7 +23,7 @@
 | | `LPAD(str, len [, pad])` | |
 | | `RPAD(str, len [, pad])` | |
 | **Concat / Replace** | `str1 \|\| str2` / `CONCAT(a, b)` | |
-| | `OREPLACE(str, from, to)` | Teradata; prefer over REPLACE |
+| | `OREPLACE(str, from, to)` | Replace all occurrences. `REPLACE(...)` is not available as a string function |
 | | `REVERSE(str)` | |
 | **Char Codes** | `ASCII(str)` | First char → decimal code |
 | | `CHR(n)` | Decimal → Latin ASCII char |
@@ -32,8 +32,8 @@
 | | `EDITDISTANCE(str1, str2 [, ci, cd, cs, ct])` | Edit distance with optional operation costs |
 | | `NGRAM(str1, str2, len [, position])` | Count of matching n-grams |
 | **Char Translation** | `OTRANSLATE(src, from, to)` | Character-by-character substitution |
-| **Charset Conversion** | `TRANSLATE(str USING src TO tgt [WITH ERROR])` | Convert between LATIN/UNICODE/KANJI1 |
-| | `TRANSLATE_CHK(str USING src TO tgt)` | 0 = ok; >0 = position of first error |
+| **Charset Conversion** | `TRANSLATE(str USING LATIN_TO_UNICODE [WITH ERROR])` | Also `UNICODE_TO_LATIN`; other pairs not tested |
+| | `TRANSLATE_CHK(str USING UNICODE_TO_LATIN)` | 0 = ok; >0 = position of first untranslatable char |
 | | `VARGRAPHIC(str)` | Convert to VARGRAPHIC type |
 | | `STRING_CS(str)` | Detect KANJI1 encoding (specialized) |
 | **Parsing** | `NVP(str, name [, name_delim [, val_delim [, n]]])` | Extract value from name=value pairs |
@@ -80,7 +80,9 @@ Four functions find substrings — use the one that matches your style or requir
 SELECT POSITION('@' IN email) FROM db.t;
 SELECT INDEX(email, '@') FROM db.t;              -- same result
 SELECT LOCATE('@', email) FROM db.t;             -- same result
-SELECT LOCATE('@', email, 5) FROM db.t;          -- start search at position 5
+SELECT LOCATE('@', email, 5) FROM db.t;          -- searches from position 5; result is RELATIVE to position 5
+-- For an absolute 1-based position, use INSTR:
+SELECT INSTR(email, '@', 5) FROM db.t;
 
 -- INSTR: negative position searches from end of string
 SELECT INSTR(filepath, '/', -1) FROM db.t;       -- position of last '/'
@@ -158,14 +160,15 @@ SELECT TRIM(name) FROM db.t;                          -- trim spaces both ends
 SELECT TRIM(LEADING '0' FROM account_num) FROM db.t;  -- remove leading zeros
 SELECT TRIM(TRAILING '.' FROM str) FROM db.t;
 
--- OREPLACE: replace all occurrences (preferred over REPLACE in Teradata)
+-- OREPLACE: replace all occurrences (REPLACE(...) is not available; fails with Error 3706)
 SELECT OREPLACE(phone, '-', '') FROM db.t;
 SELECT OREPLACE(str, ' ', '_') FROM db.t;
 
 -- OTRANSLATE: character-by-character substitution (like Unix tr)
 -- Each character in from_string is replaced by the corresponding char in to_string
 -- If to_string is shorter, excess from_string chars are deleted
--- If to_string is NULL or empty, all from_string chars are removed
+-- If to_string is an empty string, all from_string chars are removed
+-- If to_string is NULL, the result is NULL
 SELECT OTRANSLATE('hello world', 'aeiou', '*****') FROM db.t;  -- 'h*ll* w*rld'
 SELECT OTRANSLATE(str, 'ABC', 'abc') FROM db.t;                -- fold specific chars to lower
 SELECT OTRANSLATE(str, '0123456789', '') FROM db.t;            -- remove all digits
@@ -232,11 +235,12 @@ Both are table functions invoked with `FROM TABLE(...)` syntax and require a `RE
 ```sql
 -- CSV: serialize multiple columns into a single delimited string
 -- Supports up to 8 column values; use NEW VARIANT_TYPE to pass heterogeneous types
-SELECT * FROM TABLE(
-    CSV(NEW VARIANT_TYPE(dt.id, dt.name, dt.amount), ',', '"')
-    RETURNS (op VARCHAR(64000) CHARACTER SET LATIN)
-) AS t;
--- Returns: '1,"John Smith","99.50"'
+-- Source table must appear in the FROM list before the TABLE(...) call
+SELECT t.op
+FROM db.source_table dt,
+     TABLE(CSV(NEW VARIANT_TYPE(dt.id, dt.name, dt.amount), ',', '"')
+           RETURNS (op VARCHAR(64000) CHARACTER SET LATIN)) AS t;
+-- Returns: 1,"John Smith",99.50   (only string values are quoted; numbers are unquoted)
 
 -- Omit quote character to suppress quoting of string columns
 SELECT * FROM TABLE(
@@ -246,10 +250,13 @@ SELECT * FROM TABLE(
 
 -- CSVLD: parse a CSV string back into typed columns
 -- Number of RETURNS columns must match the number of values in the CSV string
-SELECT * FROM TABLE(
-    CSVLD(load_table.csv_col, ',', '"')
-    RETURNS (col1 VARCHAR(100), col2 VARCHAR(100), col3 VARCHAR(100))
-) AS t;
+-- RETURNS columns must declare CHARACTER SET UNICODE (omitting it raises Error 9134)
+SELECT t.col1, t.col2, t.col3
+FROM load_table,
+     TABLE(CSVLD(load_table.csv_col, ',', '"')
+           RETURNS (col1 VARCHAR(100) CHARACTER SET UNICODE,
+                    col2 VARCHAR(100) CHARACTER SET UNICODE,
+                    col3 VARCHAR(100) CHARACTER SET UNICODE)) AS t;
 
 -- Typical round-trip pattern
 -- Serialize: use CSV to pack row columns → store in staging
@@ -290,7 +297,8 @@ SELECT REGEXP_SUBSTR(phone, '[0-9]{3}', 1, 1) AS area_code FROM db.t;
 
 -- REGEXP_REPLACE: replace matching portion
 SELECT REGEXP_REPLACE(col, '[^a-zA-Z0-9]', '', 1, 0, 'i') FROM db.t;
--- Flags: 'i' = case-insensitive, 'g' = global (all occurrences), 'n' = newline-sensitive
+-- Valid flags: 'c', 'i', 'm', 'n', 'x'. 'i' = case-insensitive.
+-- There is no 'g' flag; pass occurrence 0 to replace all matches (as in the example above).
 ```
 
 ---
@@ -299,7 +307,7 @@ SELECT REGEXP_REPLACE(col, '[^a-zA-Z0-9]', '', 1, 0, 'i') FROM db.t;
 
 ```sql
 -- Extract domain from email address
-SELECT SUBSTR(email, INDEX(email, '@') + 1) AS domain FROM db.t;
+SELECT SUBSTR(email, INDEX(email, '@') + 1) AS email_domain FROM db.t;
 
 -- Pad a number to 8 digits with leading zeros
 SELECT LPAD(CAST(id AS VARCHAR(8)), 8, '0') FROM db.t;
@@ -337,7 +345,7 @@ WHERE TRANSLATE_CHK(name USING UNICODE_TO_LATIN) = 0;
 
 - Teradata strings are **1-indexed**
 - `CHAR` columns are blank-padded; use `TRIM` when comparing `CHAR` to `VARCHAR`
-- `OREPLACE` is preferred over `REPLACE` in Teradata SQL
+- `OREPLACE` is the string replace function; `REPLACE(...)` is not available and fails with Error 3706
 - Use `POSITION ... IN` (ANSI) rather than `INDEX` for portability
 - `TD_SYSFNLIB.` prefix is optional for embedded services functions but can be included for clarity
 - `LEFT` and `RIGHT` may conflict with ODBC parsing — use `TD_LEFT` / `TD_RIGHT` aliases when connecting via ODBC
