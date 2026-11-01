@@ -30,10 +30,10 @@ Teradata Vantage provides a native `JSON` data type with full SQL integration, b
 | `DataSize(json)` | BIGINT | Data length in bytes |
 | `GeoJSONFromGeom(geom [,prec])` | JSON/VARCHAR/CLOB | ST_Geometry → GeoJSON |
 | `GeomFromGeoJSON(geojson, srid)` | ST_Geometry | GeoJSON → ST_Geometry |
-| `JSON_AGG(col [AS name],...)` | JSON | Aggregate rows → JSON array of objects |
+| `JSON_AGG(col [AS name],...)` | JSON | Aggregate rows → JSON array of objects (a single input row returns a bare object, not a one-element array) |
 | `JSON_CHECK(string)` | VARCHAR | Validate JSON text: `'OK'` or `'INVALID: reason'` |
 | `JSON_COMPOSE(col [AS name],...)` | JSON | Scalar → JSON object; nest with JSON_AGG |
-| `JSONGETVALUE(json, path AS type)` | typed | Extract value as specific SQL type; NULL on failure |
+| `JSONGETVALUE(json, path AS type)` | typed | Extract value as specific SQL type; NULL on failure in simple queries (see note on wide select lists) |
 | `JSONMETADATA(json)` | JSON | Aggregate min/max/avg stats across rows |
 | `NVP2JSON(nvp [,name_del, val_del [,ignore]])` | JSON | Name=value&pair string → JSON object |
 
@@ -204,9 +204,10 @@ SELECT j.address.city FROM my_table;
 -- Recursive descent (..) — returns list
 SELECT j..name FROM my_table;              -- all 'name' values anywhere in doc
 
--- Array element
-SELECT j.items[0] FROM my_table;          -- first element
-SELECT j.items[0].name FROM my_table;     -- field of first element
+-- Array element (dot notation on an object or array element returns '*** ERROR MULTI RESULT ***')
+SELECT j.items[0].name FROM my_table;                 -- field of first element: works
+SELECT j.JSONExtract('$.items[0]') FROM my_table;     -- whole first element, as a one-element JSON array
+SELECT j.items[0,1] FROM my_table;                    -- index list returns both objects
 
 -- Wildcard — returns list
 SELECT j.items[0].* FROM my_table;        -- all fields of first element
@@ -256,9 +257,11 @@ SELECT JSON_CHECK('{"name":"Cameron"');            -- 'INVALID: ...'
 SELECT BSON_CHECK('160000000268656C6C6F...'xb);   -- 'OK' or 'INVALID: ...'
 SELECT BSON_CHECK('...'xb, 'STRICT');             -- adds MongoDB key restrictions
 
--- Disable validation for trusted bulk loads (session-level)
+-- Relax validation for trusted bulk loads (session-level).
+-- Skips the full syntax parse but keeps a matching-braces check; balanced but invalid text
+-- (e.g. {"a":1,,"b":2}) is accepted and stored; unbalanced braces are still rejected (error 7548).
 SET SESSION JSON IGNORE ERRORS ON;
-SET SESSION JSON IGNORE ERRORS OFF;
+SET SESSION JSON IGNORE ERRORS OFF;   -- restore after load
 ```
 
 ---
@@ -266,8 +269,9 @@ SET SESSION JSON IGNORE ERRORS OFF;
 ## Inspection Methods
 
 ```sql
--- Count keys (optional depth limit)
-SELECT j.KEYCOUNT() FROM my_table;           -- all keys
+-- Count keys (optional depth limit); array elements count as keys
+-- e.g. {"a":1,"b":[10,20,30]} → KEYCOUNT() = 5, KEYCOUNT(1) = 2
+SELECT j.KEYCOUNT() FROM my_table;           -- all keys (including array elements)
 SELECT j.KEYCOUNT(1) FROM my_table;          -- top-level keys only
 
 -- Document metadata
@@ -320,7 +324,10 @@ SELECT j1.Combine(j2, 'OBJECT') FROM my_table;       -- force object (both must 
 ## Type-safe Extraction
 
 ```sql
--- JSONGETVALUE — returns NULL on conversion failure (safer than CAST + JSONExtractValue)
+-- JSONGETVALUE — returns NULL on conversion failure in simple queries.
+-- On 20.00.31.103, a failed text-to-INTEGER conversion returned 0 in one wide select list
+-- that mixed it with other JSON methods. If the distinction matters, test with ExistValue
+-- or extract as VARCHAR and validate separately.
 SELECT JSONGETVALUE(j, '$.age' AS INTEGER) FROM my_table;
 SELECT JSONGETVALUE(j, '$.price' AS DECIMAL) FROM my_table;
 SELECT JSONGETVALUE(j, '$.name' AS VARCHAR(50)) FROM my_table;
@@ -378,7 +385,8 @@ SELECT AS JSON pkey, val FROM my_table ORDER BY pkey ASC;  -- must sort explicit
 ### JSON_AGG — aggregate function
 
 ```sql
--- All rows → JSON array of objects
+-- All rows → JSON array of objects; exactly one row returns a bare object (not a one-element array).
+-- Element order follows hash distribution — not guaranteed to match key order.
 SELECT JSON_AGG(empID, company, empName, empAge) FROM emp_table;
 -- Result: [{"empID":1,"company":"company1","empName":"Cameron","empAge":24},...]
 
@@ -426,7 +434,8 @@ FROM (
 ### JSON_PUBLISH — table operator (best for large/binary output)
 
 ```sql
--- All rows → single JSON array (default: aggregated)
+-- Default: one JSON array per AMP that holds rows (a 4-row table on 36 AMPs returns 4 one-element arrays).
+-- For a single global array, use the two-pass form shown below. Default output column is "data".
 SELECT * FROM JSON_PUBLISH(
     ON (SELECT * FROM emp_table)
 ) AS j;

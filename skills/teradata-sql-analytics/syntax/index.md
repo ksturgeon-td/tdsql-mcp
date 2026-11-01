@@ -26,12 +26,14 @@ Use `get_syntax_help(topic="<name>")` to load any topic below.
 | `date-time` | Date/time literals, arithmetic, formatting, EXTRACT |
 | `aggregate-functions` | GROUP BY, COUNT, SUM, AVG, percentiles, GROUPING SETS |
 | `window-functions` | ROW_NUMBER, RANK, LAG/LEAD, running totals, QUALIFY |
+| `bit-byte-functions` | BITAND, BITOR, BITXOR, BITNOT, GETBIT, SETBIT, COUNTSET, SHIFTLEFT/SHIFTRIGHT, ROTATELEFT/ROTATERIGHT, SUBBITSTR, TO_BYTE |
+| `json-functions` | Native JSON type (text, BSON, UBJSON), JSONPath extraction, JSON_AGG, JSON_COMPOSE, JSON_PUBLISH, TD_JSONSHRED |
 
 ## Analytics & ML
 | Topic | Description |
 |-------|-------------|
 | `fit-transform-pattern` | Reusable two-phase pattern: Fit learns from training data, Transform applies to new data |
-| `ml-functions` | Vantage ML: TD_XGBoost, TD_DecisionForest, TD_LogReg, scoring |
+| `ml-functions` | Vantage ML: TD_XGBoost, TD_DecisionForest, TD_GLM (logistic/linear regression), scoring |
 | `data-exploration` | Descriptive stats, sampling, histogram, correlation, MovingAverage, TD_UnivariateStatistics, TD_Histogram, TD_QQNorm |
 | `data-cleaning` | NULL handling, deduplication, string cleaning, outlier detection, type validation |
 | `data-prep` | Feature engineering: binning, encoding, scaling, pivoting, polynomial features, dimensionality reduction, Fit/Transform pairs, TD_SMOTE oversampling |
@@ -66,6 +68,7 @@ Use `get_syntax_help(topic="<name>")` to load any topic below.
 ## Reference
 | Topic | Description |
 |-------|-------------|
+| `object-store` | Native Object Store: CREATE FOREIGN TABLE, READ_NOS, WRITE_NOS, authorization objects |
 | `catalog-views` | DBC.* system views for schema discovery |
 | `open-table-format` | Apache Iceberg and Delta Lake via external object stores (S3, ADLS, GCS); HELP DATALAKE/DATABASE/TABLE commands; OTF DDL and DML |
 | `query-tuning` | EXPLAIN, PI design, collect stats, query rewrite tips |
