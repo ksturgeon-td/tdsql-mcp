@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "tdsql-mcp"
-version = "1.4.4"
+version = "1.4.5"
 description = "MCP server for Teradata Vantage — SQL execution and native analytics function reference for AI agents"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -41,3 +41,4 @@ tdsql-mcp = "tdsql_mcp.server:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/tdsql_mcp"]
+
