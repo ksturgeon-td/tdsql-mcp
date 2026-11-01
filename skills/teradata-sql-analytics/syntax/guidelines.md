@@ -40,7 +40,8 @@ SHOW TABLE db.large_table;
 SHOW SELECT * FROM db.my_view;
 
 -- Sample rows when you need actual data values (structure already known)
-SELECT TOP 100 * FROM db.large_table SAMPLE 0.001;
+-- TOP and SAMPLE cannot be combined (error 6916); use SAMPLE with a row count
+SELECT * FROM db.large_table SAMPLE 100;
 ```
 
 `TOP N` on a large table can perform badly even when N is small. Use `SHOW TABLE` or `SHOW SELECT *` for structure checks.
@@ -80,7 +81,7 @@ transformed AS (
 SELECT * FROM TD_XGBoostPredict(
     ON transformed AS InputTable
     ON db.model AS ModelTable DIMENSION
-    USING IDColumn('id')
+    USING IDColumn('id') ModelType('Classification')   -- the default is Regression
 ) AS dt;
 ```
 
@@ -90,12 +91,14 @@ SELECT * FROM TD_XGBoostPredict(
 -- WRONG: streams the full model or large result set to the agent
 SELECT * FROM TD_XGBoost( ON db.training_data ... ) AS t;
 
--- RIGHT: persist to a named table; agent receives only a status message
-SELECT * FROM TD_XGBoost(
-    ON db.training_data AS InputTable PARTITION BY ANY
-    OUT PERMANENT TABLE ModelTable(db.my_model)
-    USING ...
-) AS t;
+-- RIGHT: capture the model (primary output) with CREATE TABLE AS; no rows return to the agent
+CREATE MULTISET TABLE db.my_model AS (
+    SELECT * FROM TD_XGBoost(
+        ON db.training_data AS InputTable PARTITION BY ANY
+        USING ResponseColumn('label') InputColumns('x1', 'x2') ModelType('Classification') ...
+    ) AS t
+) WITH DATA;
+-- CAUTION: OUT PERMANENT TABLE ModelTable(...) persists per-task training metrics only, not the model
 ```
 
 **6. Return rows only to validate, never to process**
@@ -109,9 +112,9 @@ Fetching rows is for checking results, previewing a schema, and validating outpu
 SELECT * FROM TD_XGBoostPredict(...) AS t;
 
 -- RIGHT: aggregate in-database, return summary
-SELECT td_prediction, COUNT(*) AS n, AVG(confidence) AS avg_confidence
-FROM TD_XGBoostPredict(...) AS t
-GROUP BY td_prediction;
+SELECT Prediction, COUNT(*) AS n, AVG(Confidence_Lower) AS avg_confidence
+FROM TD_XGBoostPredict(... USING IDColumn('id') ModelType('Classification')) AS t
+GROUP BY Prediction;
 ```
 
 ### Why this matters at scale
@@ -143,7 +146,7 @@ When users ask about available data — especially external, Iceberg, or datalak
 | "What Iceberg tables are in datalake X?" | `HELP DATALAKE X` (known name) — or `HELP FOREIGN SERVER TD_SERVER_DB.X` (unknown name) | `open-table-format`, `catalog-views` |
 | "What tables are in OTF database X.Y?" | `HELP DATABASE X.Y` | `open-table-format` |
 | "What columns does OTF table X.Y.Z have?" | `HELP TABLE X.Y.Z` | `open-table-format` |
-| "What NOS / object-store foreign tables exist?" | `SELECT TableName FROM DBC.TablesV WHERE DatabaseName = 'X' AND TableKind = 'O'` | `catalog-views`, `object-store` |
+| "What NOS / object-store foreign tables exist?" | `SELECT TableName FROM DBC.TablesV WHERE DatabaseName = 'X' AND TableKind = 'O'` — returns all NoPI tables (foreign tables among them); confirm each with `SHOW TABLE` (DDL says `FOREIGN TABLE`) | `catalog-views`, `object-store` |
 | "What QueryGrid foreign servers are there?" | `HELP DATABASE TD_SERVER_DB` — rows with `Kind = 'K'` that are not OTF datalakes | `catalog-views` |
 
 **Schema inspection — use SHOW, not SELECT TOP:**
@@ -179,8 +182,8 @@ Load `get_syntax_help(topic="catalog-views")` for DBC view syntax and the full T
 | Manual percentile / histogram queries | `TD_UnivariateStatistics` | `data-exploration` |
 | Manual histogram buckets with CASE | `TD_Histogram` | `data-exploration` |
 | Manual quantile-quantile calculations | `TD_QQNorm` | `data-exploration` |
-| Manual moving/rolling average with window functions | `TD_MovingAverage` | `data-exploration` |
-| Manual Pearson correlation | `TD_Correlation` | `data-exploration` |
+| Manual moving/rolling average with window functions | `MovingAverage` (no `TD_` prefix) | `data-exploration` |
+| Pairwise Pearson correlation | SQL aggregate `CORR(x, y)` (no `TD_Correlation` function exists); see `data-exploration` | `aggregate-functions` |
 
 ### Data Cleaning
 

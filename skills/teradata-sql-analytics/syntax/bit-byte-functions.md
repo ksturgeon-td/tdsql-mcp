@@ -37,16 +37,25 @@ Teradata uses a **big-endian** model. The most significant byte is on the left; 
 
 ## Mismatched-Length Operands (BITAND / BITOR / BITXOR only)
 
-When `target_arg` and `bit_mask_arg` have different lengths, they are **aligned on the LSB** and the shorter argument is **left-padded with zeros**:
+The padding direction depends on the operand types:
+
+- **Numeric target + shorter hex mask:** the mask is **right-padded** with zeros, so it acts on the **leading (upper) bytes**.
+- **Two BYTE/VARBYTE operands of different lengths:** aligned on the **LSB**; the shorter is **left-padded**.
+
+Always write hex masks at full width to avoid ambiguity:
 
 ```sql
--- 'FFFF'XB (2 bytes) vs INTEGER (4 bytes)
--- Effective operation: '0000FFFF'XB AND '11223344'XB
-SELECT BITAND(287454020, 'FFFF'XB);   -- masks lower 2 bytes only
--- Result: 0x3344 = 13124
+-- Short mask is RIGHT-padded: 'FFFF'XB acts as 'FFFF0000'XB → upper two bytes
+SELECT BITAND(287454020, 'FFFF'XB);       -- 287440896 = 0x11220000 (the UPPER two bytes)
+
+-- Full-width mask: targets the lower two bytes as intended
+SELECT BITAND(287454020, '0000FFFF'XB);   -- 13124 = 0x3344
+
+-- Two BYTE/VARBYTE operands: aligned on LSB (shorter is left-padded)
+SELECT BITAND('0F0F'XB, 'FF'XB);          -- '000F'XB
 ```
 
-> Left-padding for operands vs right-padding for literals — they go in opposite directions. Always visualize the alignment on the **least significant byte**.
+> This applies to BITAND, BITOR, and BITXOR. Hex literals are always right-padded when extended to a required size (see above) — the same direction as the numeric+mask case.
 
 ---
 
@@ -104,9 +113,9 @@ SELECT BITAND(flags_col, BITNOT(CAST(8 AS INTEGER))) AS flags_without_bit3 FROM 
 -- Toggle a bit (XOR with the bit mask)
 SELECT BITXOR(flags_col, 8) AS toggled FROM db.t;
 
--- Mask lower 2 bytes of an INTEGER using a hex literal
-SELECT BITAND(some_int_col, 'FFFF'XB) AS lower_two_bytes FROM db.t;
--- 'FFFF'XB is left-padded to '0000FFFF'XB to match INTEGER width
+-- Mask lower 2 bytes of an INTEGER — use a full-width mask; short mask is right-padded
+SELECT BITAND(some_int_col, '0000FFFF'XB) AS lower_two_bytes FROM db.t;
+-- 'FFFF'XB alone would act as '0000FFFF'XB is NOT correct: it acts as 'FFFF0000'XB (upper bytes)
 ```
 
 ---
@@ -156,10 +165,10 @@ SELECT SUBBITSTR(20, 2, 3);
 -- Bits at positions 2,3,4 = 101 → right-justified in VARBYTE(1) = 00000101 = 5
 
 -- Extract 8 bits starting at bit 4 from an INTEGER
-SELECT SUBBITSTR(some_int_col, 4, 8) FROM db.t;   -- returns VARBYTE(1)
+SELECT SUBBITSTR(some_int_col, 4, 8) FROM db.t;   -- value is 1 byte; declared type is VARBYTE(4) for INTEGER input
 
--- Extract 12 bits — rounded up to 2-byte VARBYTE
-SELECT SUBBITSTR(some_int_col, 8, 12) FROM db.t;  -- returns VARBYTE(2), right-justified
+-- Extract 12 bits — value is 2 bytes, right-justified
+SELECT SUBBITSTR(some_int_col, 8, 12) FROM db.t;  -- declared VARBYTE(4); value is 2 bytes right-justified
 ```
 
 > **Output size:** always rounded up to the next byte boundary. 3 bits requested → 1-byte VARBYTE. 9 bits requested → 2-byte VARBYTE. Excess bits are zero-filled on the left.
@@ -217,8 +226,8 @@ SELECT ROTATERIGHT(4, 4);     -- 00000100 rotated right 4 = 01000000 = 64 (wrapp
 SELECT TO_BYTE(23);           -- BYTEINT 23 → BYTE(1) = '17'XB
 SELECT TO_BYTE(287454020);    -- INTEGER  → BYTE(4) = '11223344'XB
 
--- Useful for inspecting the hex value of a numeric result
-SELECT TO_BYTE(CAST(BITAND(some_col, 'FFFF'XB) AS INTEGER)) FROM db.t;
+-- Useful for inspecting the hex value of a numeric result; use a full-width mask
+SELECT TO_BYTE(CAST(BITAND(some_col, '0000FFFF'XB) AS INTEGER)) FROM db.t;
 ```
 
 | Input type | Output type |
@@ -234,7 +243,8 @@ SELECT TO_BYTE(CAST(BITAND(some_col, 'FFFF'XB) AS INTEGER)) FROM db.t;
 
 - **All functions are Teradata-specific** — there are no ANSI SQL equivalents. Standard SQL has no bitwise function syntax; do not use `&`, `|`, `^`, `~` operators.
 - **Signed integer overflow:** shifting or rotating a bit into the MSB (Bit 7/15/31/63) makes the result negative — all integers in Vantage are signed. This is expected behavior, not an error.
-- **UDF implicit type conversion rules** are stricter than normal Vantage rules. If an argument type doesn't match exactly, use explicit `CAST`. Example: `BITAND(CAST(some_col AS INTEGER), '0000FFFF'XB)`.
+- **UDF implicit type conversion rules** are stricter than normal Vantage rules. A numeric mask may be **narrower** than the target (`BITAND(CAST(255 AS INTEGER), 8)` works) but not **wider** — a wider mask fails with error 9881 (`BITAND(23, CAST(20 AS INTEGER))` where 23 is BYTEINT and the mask is INTEGER). CAST the target to the wider type first: `BITAND(CAST(some_col AS INTEGER), '0000FFFF'XB)`.
 - **`TD_SYSFNLIB.` prefix** is optional but can be included for clarity: `TD_SYSFNLIB.BITAND(...)`.
 - **VARBYTE max size** for all functions is 8192 bytes.
 - **DECIMAL inputs to BITAND** are implicitly converted to `NUMBER(38,0)`. BITNOT does not support DECIMAL/NUMBER.
+- **VARBYTE results cannot be cast to a number.** `CAST(SUBBITSTR(...) AS INTEGER)` fails with error 3532 ("Conversion between BYTE data and other types is illegal"). Compare VARBYTE results as bytes; `BITAND` with a numeric target returns INTEGER, which can be cast.
