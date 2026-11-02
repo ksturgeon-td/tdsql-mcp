@@ -115,7 +115,7 @@ SELECT BITXOR(flags_col, 8) AS toggled FROM db.t;
 
 -- Mask lower 2 bytes of an INTEGER — use a full-width mask; short mask is right-padded
 SELECT BITAND(some_int_col, '0000FFFF'XB) AS lower_two_bytes FROM db.t;
--- 'FFFF'XB alone would act as '0000FFFF'XB is NOT correct: it acts as 'FFFF0000'XB (upper bytes)
+-- 'FFFF'XB acts as 'FFFF0000'XB (upper bytes), NOT '0000FFFF'XB — always write masks at full width
 ```
 
 ---

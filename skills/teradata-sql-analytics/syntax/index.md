@@ -71,7 +71,7 @@ Use `get_syntax_help(topic="<name>")` to load any topic below.
 | `object-store` | Native Object Store: CREATE FOREIGN TABLE, READ_NOS, WRITE_NOS, authorization objects |
 | `catalog-views` | DBC.* system views for schema discovery |
 | `open-table-format` | Apache Iceberg and Delta Lake via external object stores (S3, ADLS, GCS); HELP DATALAKE/DATABASE/TABLE commands; OTF DDL and DML |
-| `query-tuning` | EXPLAIN, PI design, collect stats, query rewrite tips |
+| `query-tuning` | EXPLAIN, PI design, collect stats, hash-distribution skew detection, query rewrite tips |
 | `authorization-objects` | CREATE/REPLACE/GRANT authorization objects for external service credentials (AI functions, external procedures) |
 | `llm-providers` | LLM provider argument blocks for AI functions — Azure, AWS Bedrock, GCP, NVIDIA NIM, LiteLLM |
 | `byom-model-loading` | Loading PMML, H2O MOJO, ONNX, Dataiku, DataRobot, and MLeap models into Teradata BYOM tables; conversion workflow for ONNX embedding models |

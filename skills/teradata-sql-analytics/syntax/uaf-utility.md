@@ -432,4 +432,4 @@ SELECT COUNT(*) FROM orders1 WHERE TD_ISFINITE(sales) = 0;
 | `TD_ISNAN(x)` | x is NaN (Not a Number) | x is finite or infinite |
 
 > Input: FLOAT. These are typically used to gate data before passing it to `EXECUTE FUNCTION INTO ART` pipelines.
-> `CAST('Infinity' AS FLOAT)` fails with error 2620 — special values must come from a computation (e.g. `1.0/0.0`), not a literal.
+> `CAST('Infinity' AS FLOAT)` fails with error 2620 — special float values cannot be constructed from literals or SQL arithmetic (`1.0/0.0` fails with error 2618); they arise from UAF function output (e.g. a `TD_PACF` run with extra columns) or host-language injection.

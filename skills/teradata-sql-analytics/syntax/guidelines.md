@@ -158,7 +158,8 @@ SELECT TOP 1 * FROM db.large_table;
 -- RIGHT: SHOW TABLE returns DDL (column names, types, constraints) — no data scan
 SHOW TABLE db.large_table;
 
--- RIGHT: SHOW SELECT returns the resolved column list for a view or derived query
+-- RIGHT: SHOW SELECT returns DDL — for tables, the column list; for system views, the underlying base-table DDL
+-- (not the view's projected columns). Behavior on user-defined views may differ.
 SHOW SELECT * FROM db.my_view;
 SHOW SELECT * FROM db.large_table;
 ```
@@ -191,7 +192,7 @@ Load `get_syntax_help(topic="catalog-views")` for DBC view syntax and the full T
 |-------------------------------|---------------------------|-------|
 | Manual CASE-based outlier detection | `TD_OutlierFilterFit` / `TD_OutlierFilterTransform` | `data-cleaning` |
 | Manual COALESCE / UPDATE for NULL fill | `TD_SimpleImputeFit` / `TD_SimpleImputeTransform` | `data-cleaning` |
-| Manual ROW_NUMBER deduplication | Manual SQL pattern (ROW_NUMBER + QUALIFY) | `data-cleaning` |
+| Manual ROW_NUMBER deduplication | `QUALIFY ROW_NUMBER() OVER (...) = 1` — the idiomatic Teradata pattern; no dedicated native function | `data-cleaning` |
 | Find rows containing NULLs | `TD_GetRowsWithMissingValues` / `TD_GetRowsWithoutMissingValues` | `data-cleaning` |
 | Identify low-variance / useless columns | `TD_GetFutileColumns` | `data-cleaning` |
 | String fuzzy matching / distance | `StringSimilarity` | `data-cleaning` |
@@ -314,7 +315,7 @@ Load `get_syntax_help(topic="catalog-views")` for DBC view syntax and the full T
 | External autocorrelation / partial autocorrelation | `TD_ACF` / `TD_PACF` | `uaf-estimation` |
 | External differencing for stationarity | `TD_DIFF` / `TD_UNDIFF` | `uaf-estimation` |
 | External Fourier transform / frequency analysis | `TD_DFFT` / `TD_POWERSPEC` / `TD_LINESPEC` | `uaf-dsp` |
-| External convolution / digital filtering | `TD_CONVOLVE` (with `TD_FILTERFACTORY1D` coefficients) | `uaf-dsp`, `uaf-utility` |
+| External convolution / digital filtering | `TD_CONVOLVE` (with `TD_FILTERFACTORY1D` coefficients) ⚠ See `uaf-utility` — `TD_FILTERFACTORY1D` can insert millions of rows; use a UPI table and verify row count | `uaf-dsp`, `uaf-utility` |
 | External wavelet transform | `TD_DWT` / `TD_IDWT` | `uaf-dsp` |
 | External time series anomaly detection | `TD_IQR` | `uaf-data-prep` |
 | External DTW similarity | `TD_DTW` | `uaf-forecasting` |
@@ -363,7 +364,7 @@ For any non-trivial query, run `EXPLAIN` on it before executing. Read the plan a
 | `product join` | Potential Cartesian explosion | Check join conditions; add missing predicate |
 | `all-rows scan` on large table | Full table scan | Check if PI filter or index is applicable |
 | `redistributed by hash code` on large spool | Expensive data movement | Consider PI alignment or pre-staged table |
-| `(group_amps)` on very few AMPs | Data skew | Check for skewed join key values |
+| `(group_amps)` | Inter-AMP work — not a skew signal by itself; confirm skew with a `HASHAMP()` distribution query | `query-tuning` covers the skew diagnostic |
 
 **Green flags — plan is efficient:**
 - `single-AMP RETRIEVE by way of the unique primary index` — best-case access
@@ -371,7 +372,7 @@ For any non-trivial query, run `EXPLAIN` on it before executing. Read the plan a
 - `duplicated on all AMPs` on a small table — correct broadcast strategy
 - `execute the following steps in parallel` — independent steps dispatched concurrently
 
-For full EXPLAIN interpretation guidance, optimization playbook, and stats collection patterns: `get_syntax_help(topic="query-tuning")`.
+For full EXPLAIN interpretation guidance, optimization playbook, stats collection, hash-distribution skew detection, and query rewrite patterns: `get_syntax_help(topic="query-tuning")`.
 
 ---
 
