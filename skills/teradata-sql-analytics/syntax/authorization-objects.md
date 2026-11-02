@@ -1,6 +1,6 @@
 # Teradata Authorization Objects
 
-Authorization objects store external service credentials securely inside Teradata, decoupling
+Authorization objects store external service credentials inside Teradata, decoupling
 secrets from SQL code. They are used by NOS table operators (`READ_NOS`, `WRITE_NOS`),
 external object access via `CREATE FOREIGN TABLE` and `CREATE DATALAKE`, and AI inference
 functions (`AI_TextEmbeddings` and others).
@@ -8,6 +8,11 @@ functions (`AI_TextEmbeddings` and others).
 Rather than embedding credentials directly in SQL, you reference a named authorization object.
 Credentials are stored once, managed centrally, and access is controlled via standard
 Teradata permissions.
+
+> **Partial secrecy:** The `PASSWORD` and `SESSION_TOKEN` values are not exposed by the catalog,
+> but the `USER` value is **not secret** — it is readable in `DBC.AuthorizationsV` (column
+> `OSUserName`) by anyone who can query that view. Keep only non-sensitive identifiers
+> (access key ID, account name, base URL, project) in `USER`.
 
 ---
 
@@ -37,7 +42,7 @@ EXTERNALID 'external_id_value'
 | *(none — plain)* | **Recommended for DATALAKE and foreign tables.** Can be created in any database the creator has `CREATE AUTHORIZATION` on (including global databases). Referenced as `EXTERNAL SECURITY <db>.<auth>` with no keywords. |
 | `AS DEFINER` | Shared access. Auth must be in the **same database** as the referencing object. Referenced as `EXTERNAL SECURITY DEFINER TRUSTED <auth>` (unqualified only — Error 3706 if qualified). |
 | `AS INVOKER` | Exclusive access by the creating user; created in the user's own database. Referenced as `EXTERNAL SECURITY INVOKER TRUSTED <auth>`. |
-| `TRUSTED` | Required **only** when using the `AS DEFINER` or `AS INVOKER` forms in an `EXTERNAL SECURITY` clause. Not needed for plain auth. |
+| `TRUSTED` | Required in the `CREATE`/`REPLACE` statement (`AS DEFINER TRUSTED` / `AS INVOKER TRUSTED`) **and** in the matching `EXTERNAL SECURITY` reference. Omitting it is not a syntax error: `AS DEFINER` without `TRUSTED` fails at runtime with error 5359 ("Not authorized on 2 nodes"). Not needed for plain auth. |
 
 **Form 2 — ASSUME_ROLE:**
 - `AUTHSERVICETYPE` — only supported value is `'ASSUME_ROLE'`
@@ -200,7 +205,10 @@ CREATE AUTHORIZATION db.td_gen_litellm_auth
     USER     '<litellm_base_url>'
     PASSWORD '<litellm_api_key>';
 
--- Rotate credentials without dropping (use REPLACE)
+-- Rotate credentials without dropping (use REPLACE).
+-- REPLACE also CREATES the object if the name does not exist (no error), so a misspelled name
+-- silently adds a second object and leaves the old credentials in place.
+-- Confirm the change in DBC.AuthorizationsV afterwards.
 REPLACE AUTHORIZATION db.td_gen_aws_auth
     USER     '<new_access_key>'
     PASSWORD '<new_secret_key>';
@@ -246,6 +254,26 @@ GRANT EXECUTE ON credentials_db.my_auth TO operational_db;
 
 **Rule of thumb:** store auth objects in a dedicated credentials database, grant `EXECUTE`
 to every database that references them, and grant to roles rather than individual users.
+
+---
+
+## Catalog View — DBC.AuthorizationsV
+
+```sql
+SELECT AuthorizationName, AuthorizationType, OSUserName, AuthServiceType
+FROM DBC.AuthorizationsV
+WHERE DatabaseName = 'mydb';
+```
+
+| Column | Notes |
+|--------|-------|
+| `AuthorizationName` | Object name |
+| `AuthorizationType` | `U` = plain, `S` = AS DEFINER, `T` = AS INVOKER |
+| `OSUserName` | The `USER` value in clear text (not secret — see note above) |
+| `AuthServiceType` | `Default` for plain/DEFINER/INVOKER; `Temporary Credentials` for objects created with `SESSION_TOKEN` |
+
+Use this view to confirm a `CREATE`, verify a `REPLACE`, or check for accidental duplicates.
+`CREATE` on an existing name fails with error 6937 ("Authorization already exists"); `REPLACE` on a missing name silently creates a new object (see REPLACE note above).
 
 ---
 
