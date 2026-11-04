@@ -218,7 +218,7 @@ JOIN mydb.customers c ON o.customer_id = c.customer_id;
 
 ### HELP Commands — Pass Through as-is
 
-`HELP DATALAKE`, `HELP DATABASE`, and `HELP TABLE` are first-class Teradata statements for OTF and foreign table metadata. Pass them through `execute_query` exactly as written — do NOT rewrite as SELECT queries.
+`HELP DATALAKE`, `HELP DATABASE`, and `HELP TABLE` are first-class Teradata statements for OTF and foreign table metadata. Run them as-is with your SQL execution tool — do NOT rewrite as SELECT queries.
 
 ```sql
 HELP DATALAKE my_lake;                    -- list databases in datalake
@@ -227,7 +227,7 @@ HELP TABLE my_lake.sales_db.orders;       -- describe OTF table columns
 HELP TABLE mydb.my_foreign_table;         -- describe foreign table columns
 ```
 
-`describe_table` (which queries `DBC.ColumnsV`) does not work for OTF tables or NOS foreign tables.
+Schema inspection tools that query `DBC.ColumnsV` do not work for OTF tables or NOS foreign tables.
 
 ### READ_NOS — Two Equivalent Calling Forms
 

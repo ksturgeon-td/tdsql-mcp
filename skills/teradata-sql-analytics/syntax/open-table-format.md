@@ -10,7 +10,7 @@ Teradata Vantage supports reading and writing Apache Iceberg and Delta Lake tabl
 
 ## CRITICAL: HELP Commands Are First-Class OTF Statements
 
-`HELP DATALAKE`, `HELP DATABASE`, and `HELP TABLE` are the primary OTF metadata discovery commands — they query the external catalog directly. Do NOT rewrite them as `SELECT` queries. Pass them through `execute_query` as-is:
+`HELP DATALAKE`, `HELP DATABASE`, and `HELP TABLE` are the primary OTF metadata discovery commands — they query the external catalog directly. Do NOT rewrite them as `SELECT` queries. Run them as-is with your SQL execution tool:
 
 ```sql
 -- List databases in a datalake
@@ -19,11 +19,11 @@ HELP DATALAKE my_datalake;
 -- List tables in a datalake database
 HELP DATABASE my_datalake.my_db;
 
--- Describe columns of a datalake table (use this, NOT describe_table)
+-- Describe columns of a datalake table (use HELP TABLE, not a DBC.ColumnsV-based tool)
 HELP TABLE my_datalake.my_db.my_table;
 ```
 
-`describe_table` queries `DBC.ColumnsV`, which does not cover OTF tables. Always use `HELP TABLE` for OTF table schema inspection.
+Schema inspection tools that query `DBC.ColumnsV` do not cover OTF tables. Always use `HELP TABLE` for OTF table schema inspection.
 
 ---
 
@@ -389,7 +389,7 @@ SELECT * FROM DBC.ServerV WHERE TableFormat = 'iceberg';
 
 ### HELP Commands
 
-Use `execute_query` to run these — they query the external catalog, not DBC views.
+Run these as-is with your SQL execution tool — they query the external catalog, not DBC views.
 
 ```sql
 -- List databases in a datalake

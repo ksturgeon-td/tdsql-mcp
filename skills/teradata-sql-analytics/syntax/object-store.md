@@ -20,9 +20,9 @@ NOS lets Vantage read from and write to external object storage (S3, Azure Blob/
 
 ---
 
-## CRITICAL: describe_table Does Not Work for Foreign Tables
+## CRITICAL: DBC.ColumnsV-Based Schema Tools Do Not Work for Foreign Tables
 
-`describe_table` queries `DBC.ColumnsV`, which does not cover foreign tables. To inspect a foreign table's columns, use:
+Schema inspection tools that query `DBC.ColumnsV` do not cover foreign tables. To inspect a foreign table's columns, use:
 
 ```sql
 HELP TABLE [database_name.]foreign_table_name;
