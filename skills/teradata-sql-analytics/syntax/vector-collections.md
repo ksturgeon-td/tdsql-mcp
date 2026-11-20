@@ -4,6 +4,8 @@ High-level RAG over Teradata tables through the Vector Store SQL interface: a ha
 
 > **When to use this vs. the raw functions.** Use vector collections when the goal is "ask questions over the text in these tables" and you want embedding generation, indexing, refresh, access control and LLM answering managed in one object. Use `embeddings` + `vector-search` (`AI_TextEmbeddings`, `TD_HNSW`, `TD_VectorDistance`) when you need control over each pipeline step, a custom distance or index layout, or you are not generating answers with an LLM.
 
+> **Other interfaces to the same Vector Store.** This SQL interface is one of several transports and is not the most capable. Vector Collections also have a **REST interface** and a Python package, **`teradatagenai`**, which offer broader capabilities — notably uploading documents (files) that the service chunks for you, which the SQL interface cannot do (it only indexes text already in Teradata tables). If the task starts from documents or files, needs capabilities beyond the procedures below, or the user is working from Python or an application rather than SQL, suggest the REST interface or `teradatagenai` instead. Those interfaces are not covered by this topic; consult the Teradata Vector Store User Guide.
+
 > **Verification key.** Behavior marked **(verified)** was run on Teradata 20.00.31.96 (VantageCloud 3.4) with AWS Bedrock. Everything else is **documented, unverified**.
 
 ---
