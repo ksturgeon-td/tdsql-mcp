@@ -546,6 +546,8 @@ No code changes needed — the tool auto-discovers `.md` files at call time. Top
 
 `truncated: true` means more rows were available beyond the `max_rows` limit. Increase `max_rows` or add a `TOP N` / `WHERE` clause to your query.
 
+**Stored procedures (`CALL`).** Procedures return their rows (including `status` / `err_info` result sets) after the first result set. `execute_query` returns the first result set that has columns in `rows`; any further result sets are listed under `additional_result_sets` with the same three keys. `execute_statement` adds a `result_sets` array to its response when a statement returns any (plain DDL/DML responses are unchanged).
+
 ## Notes
 
 - The server establishes a persistent connection on startup and automatically reconnects on failure.

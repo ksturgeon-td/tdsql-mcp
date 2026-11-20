@@ -120,29 +120,17 @@ def _execute_query_internal(sql: str, params: list | None = None) -> list[dict]:
             cur.close()
 
 
-# ---------------------------------------------------------------------------
-# Tools
-# ---------------------------------------------------------------------------
+def _read_result_sets(cur, max_rows: int) -> list[dict]:
+    """Read every result set from an executed cursor.
 
-@mcp.tool()
-def execute_query(sql: str, max_rows: int = 100) -> str:
-    """Execute a SQL SELECT query and return results as JSON.
-
-    Args:
-        sql: The SQL query to execute.
-        max_rows: Maximum number of rows to return (default 100, capped at 10000).
-
-    Returns:
-        JSON object with keys: rows (array), row_count (int), truncated (bool).
+    A stored procedure (CALL) returns its rows in a result set after the first,
+    so reading only the first set silently drops them. Sets without columns
+    (description is [] for DDL/DML and for a CALL's leading placeholder set)
+    are skipped.
     """
-    max_rows = min(max(1, max_rows), 10_000)
-    with _conn_lock:
-        conn = _reconnect_if_needed()
-        cur = conn.cursor()
-        try:
-            cur.execute(sql)
-            if cur.description is None:
-                return json.dumps({"rows": [], "row_count": 0, "truncated": False})
+    sets = []
+    while True:
+        if cur.description:
             columns = [desc[0] for desc in cur.description]
             rows = cur.fetchmany(max_rows)
             result = [
@@ -151,10 +139,43 @@ def execute_query(sql: str, max_rows: int = 100) -> str:
             ]
             # Peek to detect truncation without fetching everything
             truncated = cur.fetchone() is not None
-            return json.dumps(
-                {"rows": result, "row_count": len(result), "truncated": truncated},
-                default=str,
-            )
+            sets.append({"rows": result, "row_count": len(result), "truncated": truncated})
+        if not cur.nextset():
+            return sets
+
+
+# ---------------------------------------------------------------------------
+# Tools
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+def execute_query(sql: str, max_rows: int = 100) -> str:
+    """Execute a SQL SELECT query or stored procedure CALL and return results as JSON.
+
+    Args:
+        sql: The SQL query to execute.
+        max_rows: Maximum number of rows to return per result set (default 100, capped at 10000).
+
+    Returns:
+        JSON object with keys: rows (array), row_count (int), truncated (bool).
+        If the statement returns more than one result set (e.g. a CALL that
+        returns a status set and a data set), the first is returned in the keys
+        above and the rest are listed under additional_result_sets, each with
+        the same three keys.
+    """
+    max_rows = min(max(1, max_rows), 10_000)
+    with _conn_lock:
+        conn = _reconnect_if_needed()
+        cur = conn.cursor()
+        try:
+            cur.execute(sql)
+            sets = _read_result_sets(cur, max_rows)
+            if not sets:
+                return json.dumps({"rows": [], "row_count": 0, "truncated": False})
+            result = sets[0]
+            if len(sets) > 1:
+                result["additional_result_sets"] = sets[1:]
+            return json.dumps(result, default=str)
         finally:
             cur.close()
 
@@ -169,7 +190,10 @@ def execute_statement(sql: str) -> str:
         sql: The SQL statement to execute.
 
     Returns:
-        JSON object with keys: status (str), rowcount (int).
+        JSON object with keys: status (str), rowcount (int). If the statement
+        is a stored procedure CALL that returns result sets (status or error
+        rows), they are included under result_sets, each with keys rows,
+        row_count and truncated (up to 100 rows per set).
     """
     _require_write()
     with _conn_lock:
@@ -177,7 +201,12 @@ def execute_statement(sql: str) -> str:
         cur = conn.cursor()
         try:
             cur.execute(sql)
-            return json.dumps({"status": "success", "rowcount": cur.rowcount}, default=str)
+            rowcount = cur.rowcount
+            result = {"status": "success", "rowcount": rowcount}
+            sets = _read_result_sets(cur, 100)
+            if sets:
+                result["result_sets"] = sets
+            return json.dumps(result, default=str)
         finally:
             cur.close()
 
