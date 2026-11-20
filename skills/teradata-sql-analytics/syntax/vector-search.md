@@ -6,6 +6,8 @@ Functions for computing vector distances and building approximate nearest-neighb
 
 > **Dimension introspection:** To get the number of dimensions in a VECTOR column, use the `.LENGTH()` method — do not infer from UDT byte size. `SELECT embedding.LENGTH() AS dims FROM db.embeddings SAMPLE 1;` See `data-types-casting` topic for full VECTOR type reference.
 
+> **Managed alternative:** for question answering over table text without hand-building the embed → index → search → LLM pipeline, see `vector-collections` (`TD_SYSAI.CreateCollection` / `Ask` / `SimilaritySearch`).
+
 ---
 
 ## TD_VectorDistance
