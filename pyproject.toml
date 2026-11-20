@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "tdsql-mcp"
-version = "1.4.5"
+version = "1.5.0"
 description = "MCP server for Teradata Vantage — SQL execution and native analytics function reference for AI agents"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -42,3 +42,8 @@ tdsql-mcp = "tdsql_mcp.server:main"
 [tool.hatch.build.targets.wheel]
 packages = ["src/tdsql_mcp"]
 
+
+# src/tdsql_mcp/syntax is a symlink to the skill's syntax dir, which hatch does
+# not follow; force-include the real files so the wheel ships the topics.
+[tool.hatch.build.targets.wheel.force-include]
+"skills/teradata-sql-analytics/syntax" = "tdsql_mcp/syntax"
